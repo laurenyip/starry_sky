@@ -1,5 +1,6 @@
 import { Navbar } from '@/components/navbar'
 import { SupabaseProvider } from '@/components/supabase-provider'
+import { ToastProvider } from '@/components/toast-provider'
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
@@ -44,8 +45,10 @@ export default function RootLayout({
     >
       <body className="flex min-h-dvh flex-col bg-background font-sans text-foreground">
         <SupabaseProvider>
-          <Navbar />
-          <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+          <ToastProvider>
+            <Navbar />
+            <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+          </ToastProvider>
         </SupabaseProvider>
       </body>
     </html>

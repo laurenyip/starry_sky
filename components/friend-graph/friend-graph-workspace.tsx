@@ -1,5 +1,6 @@
 'use client'
 
+import { useToast } from '@/components/toast-provider'
 import { CommunityRegionsLayer } from '@/components/friend-graph/community-regions-layer'
 import { ConstellationNode } from '@/components/friend-graph/constellation-node'
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
@@ -69,12 +70,15 @@ function formatSupabaseSchemaError(messages: string[]): string {
   const missingV4 =
     /constellations/i.test(joined) ||
     /node_constellations/i.test(joined) ||
-    /avatar_url/i.test(joined)
-  if (missingTable || missingColumn || missingV4) {
+    (/avatar_url/i.test(joined) && !/profiles/i.test(joined))
+  const missingV5 =
+    /profiles/i.test(joined) && /avatar_url/i.test(joined)
+  if (missingTable || missingColumn || missingV4 || missingV5) {
     return [
       'Database schema is out of date: run the SQL in your Supabase project (SQL Editor):',
       'repo file supabase/fix_add_locations_and_node_columns.sql',
-      'and for communities / avatars: supabase/migration_v4_social_constellations_avatars.sql',
+      'and for communities / node avatars: supabase/migration_v4_social_constellations_avatars.sql',
+      'and for profile avatar column: supabase/migration_v5_profiles_avatar_url.sql',
       'Then use Refresh on the dashboard or reload the page.',
       '',
       joined,
@@ -160,6 +164,15 @@ export function FriendGraphWorkspace(props: {
   )
 }
 
+const NODE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+
+function mimeToNodeExt(mime: string): string {
+  if (mime === 'image/jpeg') return 'jpg'
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  return 'jpg'
+}
+
 function FriendGraphInner({
   supabase,
   userId,
@@ -167,6 +180,7 @@ function FriendGraphInner({
   supabase: SupabaseClient
   userId: string
 }) {
+  const { showToast } = useToast()
   const shiftHeld = useShiftHeld()
   const [locations, setLocations] = useState<DbLocation[]>([])
   const [people, setPeople] = useState<DbPerson[]>([])
@@ -246,6 +260,25 @@ function FriendGraphInner({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
   const nodesRef = useRef<Node[]>(nodes)
   nodesRef.current = nodes
+
+  const patchPersonAvatar = useCallback(
+    (personId: string, url: string | null) => {
+      setPeople((prev) =>
+        prev.map((p) => (p.id === personId ? { ...p, avatar_url: url } : p))
+      )
+      setSelectedPerson((p) =>
+        p?.id === personId ? { ...p, avatar_url: url } : p
+      )
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== personId || n.type !== 'person') return n
+          const d = n.data as Record<string, unknown>
+          return { ...n, data: { ...d, avatarUrl: url } }
+        })
+      )
+    },
+    [setNodes]
+  )
 
   useEffect(() => {
     const sh = shiftRef.current
@@ -586,58 +619,96 @@ function FriendGraphInner({
   const uploadAvatar = useCallback(
     async (file: File) => {
       if (!selectedPerson) return
+      if (!NODE_IMAGE_TYPES.includes(file.type as (typeof NODE_IMAGE_TYPES)[number])) {
+        showToast('Please choose a JPEG, PNG, or WebP image.', 'error')
+        return
+      }
+      const personId = selectedPerson.id
+      const ext = mimeToNodeExt(file.type)
+      const path = `${userId}/${personId}.${ext}`
+      const prevUrl = selectedPerson.avatar_url
+
+      const blobUrl = URL.createObjectURL(file)
+      patchPersonAvatar(personId, blobUrl)
+
       setAvatarUploading(true)
       setPanelErr(null)
-      const ext =
-        file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg'
-      const path = `${userId}/${selectedPerson.id}.${ext}`
-      await supabase.storage.from('avatars').remove([path]) // ignore if missing
+
       const { error: upErr } = await supabase.storage
         .from('avatars')
         .upload(path, file, { upsert: true, cacheControl: '3600' })
+
       if (upErr) {
-        setPanelErr(upErr.message)
+        URL.revokeObjectURL(blobUrl)
+        patchPersonAvatar(personId, prevUrl)
         setAvatarUploading(false)
+        showToast(upErr.message, 'error')
         return
       }
+
       const {
         data: { publicUrl },
       } = supabase.storage.from('avatars').getPublicUrl(path)
+
       const { error: uerr } = await supabase
         .from('nodes')
         .update({ avatar_url: publicUrl })
-        .eq('id', selectedPerson.id)
+        .eq('id', personId)
         .eq('owner_id', userId)
+
+      URL.revokeObjectURL(blobUrl)
       setAvatarUploading(false)
+
       if (uerr) {
-        setPanelErr(uerr.message)
+        patchPersonAvatar(personId, prevUrl)
+        showToast(uerr.message, 'error')
         return
       }
-      await loadData()
+
+      patchPersonAvatar(personId, publicUrl)
+      showToast('Photo updated.', 'success')
     },
-    [selectedPerson, supabase, userId, loadData]
+    [
+      selectedPerson,
+      supabase,
+      userId,
+      patchPersonAvatar,
+      showToast,
+    ]
   )
 
   const removeAvatar = useCallback(async () => {
     if (!selectedPerson) return
+    const personId = selectedPerson.id
+    const prevUrl = selectedPerson.avatar_url
+
+    patchPersonAvatar(personId, null)
     setAvatarUploading(true)
     setPanelErr(null)
-    const base = `${userId}/${selectedPerson.id}`
+
     const { data: list } = await supabase.storage.from('avatars').list(userId)
-    const match = list?.find((o) => o.name.startsWith(selectedPerson.id))
+    const match = list?.find((o) => o.name.startsWith(personId))
     if (match) {
       await supabase.storage
         .from('avatars')
         .remove([`${userId}/${match.name}`])
     }
-    await supabase
+    const { error: uerr } = await supabase
       .from('nodes')
       .update({ avatar_url: null })
-      .eq('id', selectedPerson.id)
+      .eq('id', personId)
       .eq('owner_id', userId)
+
     setAvatarUploading(false)
-    await loadData()
-  }, [selectedPerson, supabase, userId, loadData])
+
+    if (uerr) {
+      patchPersonAvatar(personId, prevUrl)
+      showToast(uerr.message, 'error')
+      return
+    }
+
+    showToast('Photo removed.', 'success')
+  }, [selectedPerson, supabase, userId, patchPersonAvatar, showToast])
 
   const addLocation = useCallback(
     async (name: string): Promise<string | null> => {
@@ -1195,7 +1266,7 @@ function FriendGraphInner({
         <aside className="fixed right-0 top-0 z-30 flex h-full w-full max-w-md flex-col border-l border-zinc-200 bg-background shadow-2xl dark:border-zinc-800">
           <div className="flex items-start justify-between border-b p-4 dark:border-zinc-800">
             <div className="flex gap-3">
-              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800">
+              <label className="relative h-14 w-14 shrink-0 cursor-pointer overflow-hidden rounded-full border-2 border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800">
                 {selectedPerson.avatar_url ? (
                   <Image
                     src={selectedPerson.avatar_url}
@@ -1216,7 +1287,18 @@ function FriendGraphInner({
                       .toUpperCase()}
                   </span>
                 )}
-              </div>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  disabled={avatarUploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    e.target.value = ''
+                    if (f) void uploadAvatar(f)
+                  }}
+                />
+              </label>
               <div>
                 <h2 className="text-xl font-semibold leading-tight">
                   {selectedPerson.name}
@@ -1237,36 +1319,22 @@ function FriendGraphInner({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
             <div>
-              <label className="text-sm font-medium">Profile photo</label>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <label className="cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium dark:border-zinc-600">
-                  {avatarUploading ? 'Uploading…' : 'Upload / replace'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="sr-only"
-                    disabled={avatarUploading}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      e.target.value = ''
-                      if (f) void uploadAvatar(f)
-                    }}
-                  />
-                </label>
-                {selectedPerson.avatar_url ? (
-                  <button
-                    type="button"
-                    className="text-xs text-red-600 underline dark:text-red-400"
-                    disabled={avatarUploading}
-                    onClick={() => void removeAvatar()}
-                  >
-                    Remove photo
-                  </button>
-                ) : null}
-              </div>
+              <p className="text-sm font-medium">Profile photo</p>
               <p className="mt-1 text-[11px] text-zinc-500">
-                Stored in Supabase Storage (bucket <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">avatars</code>).
+                {avatarUploading
+                  ? 'Uploading…'
+                  : 'Tap the avatar above to choose JPEG, PNG, or WebP.'}
               </p>
+              {selectedPerson.avatar_url ? (
+                <button
+                  type="button"
+                  className="mt-2 text-xs text-red-600 underline dark:text-red-400"
+                  disabled={avatarUploading}
+                  onClick={() => void removeAvatar()}
+                >
+                  Remove photo
+                </button>
+              ) : null}
             </div>
             <div>
               <label className="text-sm font-medium">Location</label>
