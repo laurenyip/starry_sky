@@ -1,8 +1,14 @@
 'use client'
 
+import { CommunityRegionsLayer } from '@/components/friend-graph/community-regions-layer'
 import { ConstellationNode } from '@/components/friend-graph/constellation-node'
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
 import { PersonNode } from '@/components/friend-graph/person-node'
+import { CONNECTION_LABEL_PRESETS } from '@/lib/connection-presets'
+import {
+  edgesForPersonDeduped,
+  pairKey,
+} from '@/lib/edge-helpers'
 import {
   buildFlowElements,
   type DbEdge,
@@ -36,6 +42,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import Image from 'next/image'
 import {
   useCallback,
   useEffect,
@@ -59,10 +66,15 @@ function formatSupabaseSchemaError(messages: string[]): string {
   const missingColumn =
     /location_id/i.test(joined) &&
     (/column/i.test(joined) || /does not exist/i.test(joined))
-  if (missingTable || missingColumn) {
+  const missingV4 =
+    /constellations/i.test(joined) ||
+    /node_constellations/i.test(joined) ||
+    /avatar_url/i.test(joined)
+  if (missingTable || missingColumn || missingV4) {
     return [
       'Database schema is out of date: run the SQL in your Supabase project (SQL Editor):',
       'repo file supabase/fix_add_locations_and_node_columns.sql',
+      'and for communities / avatars: supabase/migration_v4_social_constellations_avatars.sql',
       'Then use Refresh on the dashboard or reload the page.',
       '',
       joined,
@@ -166,8 +178,19 @@ function FriendGraphInner({
   const [selectedPerson, setSelectedPerson] = useState<DbPerson | null>(null)
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null)
   const [pendingConn, setPendingConn] = useState<PendingConn | null>(null)
-  const [connRelationship, setConnRelationship] =
-    useState<RelationshipKind>('friend')
+  const [connEdgeLabel, setConnEdgeLabel] = useState('friends')
+
+  const [socialConstellations, setSocialConstellations] = useState<
+    { id: string; name: string; user_id: string; color_index: number }[]
+  >([])
+  const [nodeConstellationRows, setNodeConstellationRows] = useState<
+    { node_id: string; constellation_id: string }[]
+  >([])
+
+  const [connSearch, setConnSearch] = useState('')
+  const [newConnOtherId, setNewConnOtherId] = useState('')
+  const [newConnLabel, setNewConnLabel] = useState('')
+  const [newConstellationName, setNewConstellationName] = useState('')
 
   const [addPersonOpen, setAddPersonOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -186,6 +209,10 @@ function FriendGraphInner({
   const [panelRows, setPanelRows] = useState<{ key: string; value: string }[]>(
     [{ key: '', value: '' }]
   )
+  const [panelConstellationIds, setPanelConstellationIds] = useState<string[]>(
+    []
+  )
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const [panelSaving, setPanelSaving] = useState(false)
   const [panelErr, setPanelErr] = useState<string | null>(null)
 
@@ -246,7 +273,7 @@ function FriendGraphInner({
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const [locsRes, nodesRes, edgesRes] = await Promise.all([
+    const [locsRes, nodesRes, edgesRes, consRes, ncRes] = await Promise.all([
       supabase
         .from('locations')
         .select('id,name,user_id')
@@ -255,17 +282,27 @@ function FriendGraphInner({
       supabase
         .from('nodes')
         .select(
-          'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y'
+          'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,avatar_url'
         )
         .eq('owner_id', userId),
       supabase
         .from('edges')
         .select('id,owner_id,source_node_id,target_node_id,label')
         .eq('owner_id', userId),
+      supabase
+        .from('constellations')
+        .select('id,name,user_id,color_index')
+        .eq('user_id', userId)
+        .order('name'),
+      supabase.from('node_constellations').select('node_id,constellation_id'),
     ])
-    const errs = [locsRes.error, nodesRes.error, edgesRes.error].filter(
-      Boolean
-    ) as { message: string }[]
+    const errs = [
+      locsRes.error,
+      nodesRes.error,
+      edgesRes.error,
+      consRes.error,
+      ncRes.error,
+    ].filter(Boolean) as { message: string }[]
     if (errs.length) {
       setError(
         formatSupabaseSchemaError(errs.map((e) => e.message))
@@ -289,6 +326,16 @@ function FriendGraphInner({
     }
     setLocations(locs)
     const rawPeople = (nodesRes.data ?? []) as Record<string, unknown>[]
+    const ncList = (ncRes.data ?? []) as {
+      node_id: string
+      constellation_id: string
+    }[]
+    const ncByNode = new Map<string, string[]>()
+    for (const row of ncList) {
+      const arr = ncByNode.get(row.node_id) ?? []
+      arr.push(row.constellation_id)
+      ncByNode.set(row.node_id, arr)
+    }
     setPeople(
       rawPeople.map((r) => ({
         id: String(r.id),
@@ -301,6 +348,8 @@ function FriendGraphInner({
           r.position_x == null ? null : Number(r.position_x as number),
         position_y:
           r.position_y == null ? null : Number(r.position_y as number),
+        avatar_url: r.avatar_url ? String(r.avatar_url) : null,
+        constellation_ids: ncByNode.get(String(r.id)) ?? [],
       }))
     )
     setDbEdges(
@@ -311,6 +360,15 @@ function FriendGraphInner({
         label: String(e.label ?? 'friend'),
       }))
     )
+    setSocialConstellations(
+      (consRes.data ?? []) as {
+        id: string
+        name: string
+        user_id: string
+        color_index: number
+      }[]
+    )
+    setNodeConstellationRows(ncList)
     setLoading(false)
   }, [supabase, userId])
 
@@ -330,6 +388,10 @@ function FriendGraphInner({
       setPanelRel('friend')
       setPanelNotes('')
       setPanelRows([{ key: '', value: '' }])
+      setPanelConstellationIds([])
+      setConnSearch('')
+      setNewConnOtherId('')
+      setNewConnLabel('')
       return
     }
     setPanelLocId(selectedPerson.location_id ?? '')
@@ -342,8 +404,21 @@ function FriendGraphInner({
     setPanelRows(
       customAttributesToRows(parseCustomAttributes(selectedPerson.custom_attributes))
     )
+    setPanelConstellationIds([...(selectedPerson.constellation_ids ?? [])])
     setPanelErr(null)
+    setConnSearch('')
+    setNewConnOtherId('')
+    setNewConnLabel('')
   }, [selectedPerson])
+
+  const nodeIdsByConstellationId = useMemo(() => {
+    const m: Record<string, string[]> = {}
+    for (const row of nodeConstellationRows) {
+      if (!m[row.constellation_id]) m[row.constellation_id] = []
+      m[row.constellation_id].push(row.node_id)
+    }
+    return m
+  }, [nodeConstellationRows])
 
   const savePanel = useCallback(async () => {
     if (!selectedPerson) return
@@ -373,11 +448,29 @@ function FriendGraphInner({
       })
       .eq('id', selectedPerson.id)
       .eq('owner_id', userId)
-    setPanelSaving(false)
     if (uerr) {
+      setPanelSaving(false)
       setPanelErr(uerr.message)
       return
     }
+    await supabase
+      .from('node_constellations')
+      .delete()
+      .eq('node_id', selectedPerson.id)
+    if (panelConstellationIds.length > 0) {
+      const { error: ncerr } = await supabase.from('node_constellations').insert(
+        panelConstellationIds.map((constellation_id) => ({
+          node_id: selectedPerson.id,
+          constellation_id,
+        }))
+      )
+      if (ncerr) {
+        setPanelSaving(false)
+        setPanelErr(ncerr.message)
+        return
+      }
+    }
+    setPanelSaving(false)
     await loadData()
     setSelectedPerson(null)
   }, [
@@ -386,6 +479,7 @@ function FriendGraphInner({
     panelRel,
     panelNotes,
     panelRows,
+    panelConstellationIds,
     supabase,
     userId,
     loadData,
@@ -397,6 +491,151 @@ function FriendGraphInner({
     await supabase.from('nodes').delete().eq('id', selectedPerson.id).eq('owner_id', userId)
     setPanelSaving(false)
     setSelectedPerson(null)
+    await loadData()
+  }, [selectedPerson, supabase, userId, loadData])
+
+  const addPanelConnection = useCallback(async () => {
+    if (!selectedPerson || !newConnOtherId) return
+    const label = newConnLabel.trim() || 'connected'
+    const dup = dbEdges.some(
+      (e) =>
+        pairKey(e.source_node_id, e.target_node_id) ===
+        pairKey(selectedPerson.id, newConnOtherId)
+    )
+    if (dup) {
+      setPanelErr('You already have a connection with this person.')
+      return
+    }
+    setPanelErr(null)
+    const { error: e } = await supabase.from('edges').insert([
+      {
+        owner_id: userId,
+        source_node_id: selectedPerson.id,
+        target_node_id: newConnOtherId,
+        label,
+      },
+      {
+        owner_id: userId,
+        source_node_id: newConnOtherId,
+        target_node_id: selectedPerson.id,
+        label,
+      },
+    ])
+    if (e) {
+      setPanelErr(e.message)
+      return
+    }
+    setNewConnOtherId('')
+    setNewConnLabel('')
+    await loadData()
+  }, [
+    selectedPerson,
+    newConnOtherId,
+    newConnLabel,
+    dbEdges,
+    supabase,
+    userId,
+    loadData,
+  ])
+
+  const removePanelConnection = useCallback(
+    async (otherId: string) => {
+      if (!selectedPerson) return
+      const a = selectedPerson.id
+      const b = otherId
+      await supabase
+        .from('edges')
+        .delete()
+        .eq('owner_id', userId)
+        .eq('source_node_id', a)
+        .eq('target_node_id', b)
+      await supabase
+        .from('edges')
+        .delete()
+        .eq('owner_id', userId)
+        .eq('source_node_id', b)
+        .eq('target_node_id', a)
+      await loadData()
+    },
+    [selectedPerson, supabase, userId, loadData]
+  )
+
+  const createSocialConstellation = useCallback(async () => {
+    const name = newConstellationName.trim()
+    if (!name) return
+    const { data, error: e } = await supabase
+      .from('constellations')
+      .insert({
+        user_id: userId,
+        name,
+        color_index: socialConstellations.length % 8,
+      })
+      .select('id')
+      .single()
+    if (e) {
+      setPanelErr(e.message)
+      return
+    }
+    setNewConstellationName('')
+    if (data?.id) {
+      setPanelConstellationIds((prev) => [...prev, data.id as string])
+    }
+    await loadData()
+  }, [newConstellationName, socialConstellations.length, supabase, userId, loadData])
+
+  const uploadAvatar = useCallback(
+    async (file: File) => {
+      if (!selectedPerson) return
+      setAvatarUploading(true)
+      setPanelErr(null)
+      const ext =
+        file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg'
+      const path = `${userId}/${selectedPerson.id}.${ext}`
+      await supabase.storage.from('avatars').remove([path]) // ignore if missing
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, file, { upsert: true, cacheControl: '3600' })
+      if (upErr) {
+        setPanelErr(upErr.message)
+        setAvatarUploading(false)
+        return
+      }
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('avatars').getPublicUrl(path)
+      const { error: uerr } = await supabase
+        .from('nodes')
+        .update({ avatar_url: publicUrl })
+        .eq('id', selectedPerson.id)
+        .eq('owner_id', userId)
+      setAvatarUploading(false)
+      if (uerr) {
+        setPanelErr(uerr.message)
+        return
+      }
+      await loadData()
+    },
+    [selectedPerson, supabase, userId, loadData]
+  )
+
+  const removeAvatar = useCallback(async () => {
+    if (!selectedPerson) return
+    setAvatarUploading(true)
+    setPanelErr(null)
+    const base = `${userId}/${selectedPerson.id}`
+    const { data: list } = await supabase.storage.from('avatars').list(userId)
+    const match = list?.find((o) => o.name.startsWith(selectedPerson.id))
+    if (match) {
+      await supabase.storage
+        .from('avatars')
+        .remove([`${userId}/${match.name}`])
+    }
+    await supabase
+      .from('nodes')
+      .update({ avatar_url: null })
+      .eq('id', selectedPerson.id)
+      .eq('owner_id', userId)
+    setAvatarUploading(false)
     await loadData()
   }, [selectedPerson, supabase, userId, loadData])
 
@@ -484,48 +723,78 @@ function FriendGraphInner({
     if (!pendingConn) return
     const exists = dbEdges.some(
       (e) =>
-        (e.source_node_id === pendingConn.source &&
-          e.target_node_id === pendingConn.target) ||
-        (e.source_node_id === pendingConn.target &&
-          e.target_node_id === pendingConn.source)
+        pairKey(e.source_node_id, e.target_node_id) ===
+        pairKey(pendingConn.source, pendingConn.target)
     )
     if (exists) {
       setPendingConn(null)
       return
     }
-    const { error: e } = await supabase.from('edges').insert({
-      owner_id: userId,
-      source_node_id: pendingConn.source,
-      target_node_id: pendingConn.target,
-      label: connRelationship,
-    })
+    const label = connEdgeLabel.trim() || 'connected'
+    const { error: e } = await supabase.from('edges').insert([
+      {
+        owner_id: userId,
+        source_node_id: pendingConn.source,
+        target_node_id: pendingConn.target,
+        label,
+      },
+      {
+        owner_id: userId,
+        source_node_id: pendingConn.target,
+        target_node_id: pendingConn.source,
+        label,
+      },
+    ])
     if (e) setError(e.message)
     setPendingConn(null)
     await loadData()
-  }, [pendingConn, dbEdges, supabase, userId, connRelationship, loadData])
+  }, [pendingConn, dbEdges, supabase, userId, connEdgeLabel, loadData])
 
   const saveEdgeLabel = useCallback(async () => {
     if (!selectedEdge) return
-    const { error: e } = await supabase
+    const raw = dbEdges.find((d) => d.id === selectedEdge.id)
+    if (!raw) return
+    const a = raw.source_node_id
+    const b = raw.target_node_id
+    const label = connEdgeLabel.trim() || 'connected'
+    const { error: e1 } = await supabase
       .from('edges')
-      .update({ label: connRelationship })
-      .eq('id', selectedEdge.id)
+      .update({ label })
       .eq('owner_id', userId)
-    if (e) setError(e.message)
+      .eq('source_node_id', a)
+      .eq('target_node_id', b)
+    const { error: e2 } = await supabase
+      .from('edges')
+      .update({ label })
+      .eq('owner_id', userId)
+      .eq('source_node_id', b)
+      .eq('target_node_id', a)
+    if (e1 || e2) setError((e1 ?? e2)?.message ?? 'Update failed')
     setSelectedEdge(null)
     await loadData()
-  }, [selectedEdge, supabase, userId, connRelationship, loadData])
+  }, [selectedEdge, dbEdges, supabase, userId, connEdgeLabel, loadData])
 
   const deleteEdge = useCallback(async () => {
     if (!selectedEdge) return
+    const raw = dbEdges.find((d) => d.id === selectedEdge.id)
+    if (!raw) return
+    const a = raw.source_node_id
+    const b = raw.target_node_id
     await supabase
       .from('edges')
       .delete()
-      .eq('id', selectedEdge.id)
       .eq('owner_id', userId)
+      .eq('source_node_id', a)
+      .eq('target_node_id', b)
+    await supabase
+      .from('edges')
+      .delete()
+      .eq('owner_id', userId)
+      .eq('source_node_id', b)
+      .eq('target_node_id', a)
     setSelectedEdge(null)
     await loadData()
-  }, [selectedEdge, supabase, userId, loadData])
+  }, [selectedEdge, dbEdges, supabase, userId, loadData])
 
   const schedulePersistPosition = useCallback(
     (id: string, x: number, y: number) => {
@@ -544,7 +813,7 @@ function FriendGraphInner({
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target) return
     if (c.source === c.target) return
-    setConnRelationship('friend')
+    setConnEdgeLabel('friends')
     setPendingConn({ source: c.source, target: c.target })
   }, [])
 
@@ -598,7 +867,8 @@ function FriendGraphInner({
     <p className="pointer-events-none absolute left-3 top-3 z-10 max-w-[min(24rem,calc(100%-1.5rem))] rounded-lg border border-zinc-200/80 bg-background/90 px-3 py-2 text-[11px] text-zinc-600 shadow-sm backdrop-blur dark:border-zinc-700 dark:text-zinc-400">
       Hold <kbd className="rounded border border-zinc-300 px-1 dark:border-zinc-600">Shift</kbd>{' '}
       and connect handles between people. Drag nodes to rearrange; drop into
-      another region to move location. Click an edge to edit the relationship.
+      another region to move location. Click an edge to see the relationship on
+      the line or edit below.
     </p>
   )
 
@@ -634,6 +904,8 @@ function FriendGraphInner({
         nodesConnectable={shiftHeld}
         elementsSelectable
         onNodeClick={(_, n) => {
+          setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
+          setSelectedEdge(null)
           if (n.type === 'person') {
             const row = people.find((p) => p.id === n.id)
             if (row) setSelectedPerson(row)
@@ -642,15 +914,15 @@ function FriendGraphInner({
         onPaneClick={() => {
           setSelectedPerson(null)
           setSelectedEdge(null)
+          setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
         }}
         onEdgeClick={(_, e) => {
+          setEdges((eds) =>
+            eds.map((edge) => ({ ...edge, selected: edge.id === e.id }))
+          )
           setSelectedEdge(e)
           const raw = dbEdges.find((d) => d.id === e.id)
-          setConnRelationship(
-            raw && RELATIONSHIP_VALUES.includes(raw.label as RelationshipKind)
-              ? (raw.label as RelationshipKind)
-              : 'friend'
-          )
+          setConnEdgeLabel(raw?.label ?? '')
         }}
         onNodeDragStop={onNodeDragStop}
         fitView
@@ -659,6 +931,10 @@ function FriendGraphInner({
         className="touch-none h-full w-full bg-zinc-50/50 dark:bg-zinc-950/40"
       >
         <Background gap={22} size={1.2} />
+        <CommunityRegionsLayer
+          constellations={socialConstellations}
+          nodeIdsByConstellationId={nodeIdsByConstellationId}
+        />
         <Controls showInteractive={false} />
         <MiniMap
           className="!bg-background/90 dark:!bg-zinc-900/90"
@@ -820,21 +1096,26 @@ function FriendGraphInner({
           <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-background p-6 dark:border-zinc-700">
             <h3 className="font-semibold">New connection</h3>
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-              How are they connected?
+              Describe how they&apos;re connected (saved both ways).
             </p>
-            <select
-              value={connRelationship}
-              onChange={(e) =>
-                setConnRelationship(e.target.value as RelationshipKind)
-              }
+            <input
+              value={connEdgeLabel}
+              onChange={(e) => setConnEdgeLabel(e.target.value)}
               className="mt-3 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            >
-              {RELATIONSHIP_VALUES.map((r) => (
-                <option key={r} value={r}>
-                  {relationshipTitle(r)}
-                </option>
+              placeholder="e.g. coworkers, siblings"
+            />
+            <div className="mt-2 flex flex-wrap gap-1">
+              {CONNECTION_LABEL_PRESETS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] dark:border-zinc-600"
+                  onClick={() => setConnEdgeLabel(p)}
+                >
+                  {p}
+                </button>
               ))}
-            </select>
+            </div>
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
@@ -858,19 +1139,27 @@ function FriendGraphInner({
       {selectedEdge ? (
         <div className="fixed bottom-24 left-1/2 z-40 w-[min(22rem,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-zinc-200 bg-background p-4 shadow-xl dark:border-zinc-700">
           <p className="text-sm font-medium">Edit connection</p>
-          <select
-            value={connRelationship}
-            onChange={(e) =>
-              setConnRelationship(e.target.value as RelationshipKind)
-            }
+          <p className="mt-1 text-xs text-zinc-500">
+            The label on the line is the relationship between the two people.
+          </p>
+          <input
+            value={connEdgeLabel}
+            onChange={(e) => setConnEdgeLabel(e.target.value)}
             className="mt-2 w-full rounded-md border px-3 py-2 text-sm dark:border-zinc-600"
-          >
-            {RELATIONSHIP_VALUES.map((r) => (
-              <option key={r} value={r}>
-                {relationshipTitle(r)}
-              </option>
+            placeholder="Relationship label"
+          />
+          <div className="mt-2 flex flex-wrap gap-1">
+            {CONNECTION_LABEL_PRESETS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className="rounded-full border px-2 py-0.5 text-[11px] dark:border-zinc-600"
+                onClick={() => setConnEdgeLabel(p)}
+              >
+                {p}
+              </button>
             ))}
-          </select>
+          </div>
           <div className="mt-3 flex gap-2">
             <button
               type="button"
@@ -889,7 +1178,12 @@ function FriendGraphInner({
             <button
               type="button"
               className="rounded-md border px-3 py-2 text-sm dark:border-zinc-600"
-              onClick={() => setSelectedEdge(null)}
+              onClick={() => {
+                setSelectedEdge(null)
+                setEdges((eds) =>
+                  eds.map((edge) => ({ ...edge, selected: false }))
+                )
+              }}
             >
               Close
             </button>
@@ -900,16 +1194,36 @@ function FriendGraphInner({
       {selectedPerson ? (
         <aside className="fixed right-0 top-0 z-30 flex h-full w-full max-w-md flex-col border-l border-zinc-200 bg-background shadow-2xl dark:border-zinc-800">
           <div className="flex items-start justify-between border-b p-4 dark:border-zinc-800">
-            <div>
-              <h2 className="text-xl font-semibold">{selectedPerson.name}</h2>
-              <div className="mt-2 flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200 text-sm font-bold dark:bg-zinc-700">
-                {selectedPerson.name
-                  .split(/\s+/)
-                  .filter(Boolean)
-                  .map((s) => s[0])
-                  .slice(0, 2)
-                  .join('')
-                  .toUpperCase()}
+            <div className="flex gap-3">
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800">
+                {selectedPerson.avatar_url ? (
+                  <Image
+                    src={selectedPerson.avatar_url}
+                    alt=""
+                    width={56}
+                    height={56}
+                    className="h-full w-full object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-sm font-bold">
+                    {selectedPerson.name
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .map((s) => s[0])
+                      .slice(0, 2)
+                      .join('')
+                      .toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold leading-tight">
+                  {selectedPerson.name}
+                </h2>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Your relationship to them (category)
+                </p>
               </div>
             </div>
             <button
@@ -922,6 +1236,38 @@ function FriendGraphInner({
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
+            <div>
+              <label className="text-sm font-medium">Profile photo</label>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium dark:border-zinc-600">
+                  {avatarUploading ? 'Uploading…' : 'Upload / replace'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    disabled={avatarUploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      e.target.value = ''
+                      if (f) void uploadAvatar(f)
+                    }}
+                  />
+                </label>
+                {selectedPerson.avatar_url ? (
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 underline dark:text-red-400"
+                    disabled={avatarUploading}
+                    onClick={() => void removeAvatar()}
+                  >
+                    Remove photo
+                  </button>
+                ) : null}
+              </div>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                Stored in Supabase Storage (bucket <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">avatars</code>).
+              </p>
+            </div>
             <div>
               <label className="text-sm font-medium">Location</label>
               <select
@@ -1021,32 +1367,137 @@ function FriendGraphInner({
               </div>
             </div>
             <div>
-              <p className="text-sm font-medium">Connected people</p>
-              <ul className="mt-2 space-y-2 text-sm">
-                {dbEdges
+              <p className="text-sm font-medium">Communities (constellations)</p>
+              <p className="text-xs text-zinc-500">
+                Group people across locations; shown as soft regions on the graph.
+              </p>
+              <div className="mt-2 flex max-h-40 flex-col gap-2 overflow-y-auto rounded-md border border-zinc-200 p-2 dark:border-zinc-700">
+                {socialConstellations.length === 0 ? (
+                  <p className="text-xs text-zinc-500">None yet — create one below.</p>
+                ) : (
+                  socialConstellations.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex cursor-pointer items-center gap-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={panelConstellationIds.includes(c.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setPanelConstellationIds((prev) => [...prev, c.id])
+                          } else {
+                            setPanelConstellationIds((prev) =>
+                              prev.filter((id) => id !== c.id)
+                            )
+                          }
+                        }}
+                      />
+                      <span>{c.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={newConstellationName}
+                  onChange={(e) => setNewConstellationName(e.target.value)}
+                  placeholder="New community name"
+                  className="min-w-0 flex-1 rounded-md border px-2 py-1.5 text-sm dark:border-zinc-600"
+                />
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md border px-2 py-1.5 text-xs dark:border-zinc-600"
+                  onClick={() => void createSocialConstellation()}
+                >
+                  + Create
+                </button>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-medium">Connections</p>
+              <p className="text-xs text-zinc-500">
+                Links to other people (bidirectional, same label both ways). Edge
+                labels on the canvas show names; relationship note appears in the
+                tooltip.
+              </p>
+              <input
+                value={connSearch}
+                onChange={(e) => setConnSearch(e.target.value)}
+                placeholder="Search people…"
+                className="mt-2 w-full rounded-md border px-3 py-1.5 text-sm dark:border-zinc-600"
+              />
+              <select
+                value={newConnOtherId}
+                onChange={(e) => setNewConnOtherId(e.target.value)}
+                className="mt-2 w-full rounded-md border px-3 py-2 text-sm dark:border-zinc-600"
+              >
+                <option value="">Select a person…</option>
+                {people
                   .filter(
-                    (e) =>
-                      e.source_node_id === selectedPerson.id ||
-                      e.target_node_id === selectedPerson.id
+                    (p) =>
+                      p.id !== selectedPerson.id &&
+                      p.name
+                        .toLowerCase()
+                        .includes(connSearch.trim().toLowerCase())
                   )
-                  .map((e) => {
-                    const oid =
-                      e.source_node_id === selectedPerson.id
-                        ? e.target_node_id
-                        : e.source_node_id
-                    const other = people.find((p) => p.id === oid)
-                    return (
-                      <li
-                        key={e.id}
-                        className="flex justify-between gap-2 rounded-md border border-zinc-200 px-2 py-1.5 dark:border-zinc-700"
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+              <input
+                value={newConnLabel}
+                onChange={(e) => setNewConnLabel(e.target.value)}
+                placeholder="Relationship (e.g. childhood friends)"
+                className="mt-2 w-full rounded-md border px-3 py-1.5 text-sm dark:border-zinc-600"
+              />
+              <div className="mt-1 flex flex-wrap gap-1">
+                {CONNECTION_LABEL_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] dark:border-zinc-600"
+                    onClick={() => setNewConnLabel(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="mt-2 w-full rounded-md border border-zinc-300 py-1.5 text-sm dark:border-zinc-600"
+                onClick={() => void addPanelConnection()}
+              >
+                Add connection
+              </button>
+              <ul className="mt-3 space-y-2 text-sm">
+                {edgesForPersonDeduped(dbEdges, selectedPerson.id).map((e) => {
+                  const oid =
+                    e.source_node_id === selectedPerson.id
+                      ? e.target_node_id
+                      : e.source_node_id
+                  const other = people.find((p) => p.id === oid)
+                  return (
+                    <li
+                      key={pairKey(e.source_node_id, e.target_node_id)}
+                      className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-2 py-1.5 dark:border-zinc-700"
+                    >
+                      <span className="font-medium">{other?.name ?? oid}</span>
+                      <span className="max-w-[40%] truncate text-xs text-zinc-500">
+                        {e.label}
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 text-xs text-red-600 dark:text-red-400"
+                        onClick={() => void removePanelConnection(oid)}
                       >
-                        <span>{other?.name ?? oid}</span>
-                        <span className="text-zinc-500">
-                          {relationshipTitle(e.label)}
-                        </span>
-                      </li>
-                    )
-                  })}
+                        Remove
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
             {panelErr ? (

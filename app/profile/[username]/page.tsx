@@ -108,7 +108,7 @@ async function loadProfileAndGraph(
     db
       .from('nodes')
       .select(
-        'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y'
+        'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,avatar_url'
       )
       .eq('owner_id', profile.id),
     db
@@ -134,6 +134,10 @@ async function loadProfileAndGraph(
       r.position_x == null ? null : Number(r.position_x as number),
     position_y:
       r.position_y == null ? null : Number(r.position_y as number),
+    avatar_url:
+      r.avatar_url == null || r.avatar_url === ''
+        ? null
+        : String(r.avatar_url),
   }))
 
   const edges: DbEdge[] = (edgesRes.data ?? []).map((e) => ({

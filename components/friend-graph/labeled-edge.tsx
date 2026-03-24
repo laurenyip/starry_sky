@@ -8,7 +8,11 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 
-export type LabeledEdgeData = { label: string }
+export type LabeledEdgeData = {
+  displayName: string
+  relationshipLabel: string
+  tooltip: string
+}
 
 export function LabeledEdge({
   id,
@@ -19,7 +23,6 @@ export function LabeledEdge({
   sourcePosition,
   targetPosition,
   style,
-  markerEnd,
   selected,
   data,
 }: EdgeProps<Edge<LabeledEdgeData>>) {
@@ -36,12 +39,15 @@ export function LabeledEdge({
   const baseStroke =
     typeof style?.stroke === 'string' ? style.stroke : '#71717a'
 
+  const rel = (data?.relationshipLabel ?? '').trim() || '—'
+
   return (
     <>
       <BaseEdge
         id={id}
         path={path}
-        markerEnd={markerEnd}
+        markerEnd={undefined}
+        markerStart={undefined}
         style={{
           ...style,
           stroke: stroke ?? baseStroke,
@@ -49,17 +55,19 @@ export function LabeledEdge({
         }}
         interactionWidth={28}
       />
-      <EdgeLabelRenderer>
-        <div
-          className="nodrag nopan pointer-events-none rounded-full border border-zinc-200/90 bg-background/95 px-2 py-0.5 text-[10px] font-medium text-foreground shadow-sm dark:border-zinc-600/90"
-          style={{
-            position: 'absolute',
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-          }}
-        >
-          {data?.label ?? '—'}
-        </div>
-      </EdgeLabelRenderer>
+      {selected ? (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan pointer-events-none rounded-full border border-zinc-200/90 bg-background/95 px-2.5 py-1 text-xs font-medium text-foreground shadow-md dark:border-zinc-600/90"
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            }}
+          >
+            {rel}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
     </>
   )
 }

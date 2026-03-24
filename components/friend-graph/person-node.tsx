@@ -2,10 +2,12 @@
 
 import { relationshipTitle } from '@/lib/graph-model'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import Image from 'next/image'
 
 export type PersonNodeData = {
   name: string
   relationship: string
+  avatarUrl?: string | null
   shiftConnect?: boolean
   justAdded?: boolean
 }
@@ -22,10 +24,12 @@ export function PersonNode({
   selected,
 }: NodeProps<Node<PersonNodeData>>) {
   const connectable = data.shiftConnect === true
+  const avatar = data.avatarUrl?.trim()
+
   return (
     <div
       className={[
-        'relative flex h-[52px] w-[52px] select-none items-center justify-center rounded-full border-2 bg-background text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform]',
+        'relative flex h-[52px] w-[52px] select-none items-center justify-center overflow-hidden rounded-full border-2 bg-background text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform]',
         selected
           ? 'border-violet-500 ring-2 ring-violet-400/40'
           : 'border-zinc-300 dark:border-zinc-600',
@@ -43,9 +47,20 @@ export function PersonNode({
         style={{ width: 10, height: 10, opacity: connectable ? 0.35 : 0 }}
         isConnectable={connectable}
       />
-      <span className="pointer-events-none leading-none tracking-tight">
-        {initials(data.name)}
-      </span>
+      {avatar ? (
+        <Image
+          src={avatar}
+          alt=""
+          width={48}
+          height={48}
+          className="h-full w-full object-cover"
+          unoptimized
+        />
+      ) : (
+        <span className="pointer-events-none leading-none tracking-tight">
+          {initials(data.name)}
+        </span>
+      )}
       <span className="pointer-events-none absolute -bottom-5 left-1/2 max-w-[7rem] -translate-x-1/2 truncate text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
         {relationshipTitle(data.relationship)}
       </span>

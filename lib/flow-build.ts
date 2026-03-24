@@ -1,12 +1,11 @@
 import type { Edge, Node } from '@xyflow/react'
-import { MarkerType } from '@xyflow/react'
+import { dedupeEdgesForGraph } from '@/lib/edge-helpers'
 import { layoutPersonNodesInCluster } from '@/lib/force-layout-cluster'
 import {
   CONSTELLATION_HEIGHT,
   CONSTELLATION_NODE_ID,
   CONSTELLATION_WIDTH,
   constellationGroupPosition,
-  relationshipTitle,
   scatterPersonInGroup,
 } from '@/lib/graph-model'
 
@@ -20,6 +19,8 @@ export type DbPerson = {
   custom_attributes: Record<string, unknown> | null
   position_x: number | null
   position_y: number | null
+  avatar_url: string | null
+  constellation_ids?: string[]
 }
 export type DbEdge = {
   id: string
@@ -65,10 +66,13 @@ export function buildFlowElements(
     peopleByLoc.set(lid, arr)
   }
 
-  const internalEdges = edges.map((e) => ({
+  const displayEdges = dedupeEdgesForGraph(edges)
+  const internalEdges = displayEdges.map((e) => ({
     source: e.source_node_id,
     target: e.target_node_id,
   }))
+
+  const nameById = new Map(people.map((p) => [p.id, p.name]))
 
   const personNodes: Node[] = []
 
@@ -131,6 +135,7 @@ export function buildFlowElements(
         data: {
           name: p.name,
           relationship: p.relationship,
+          avatarUrl: p.avatar_url ?? null,
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
         },
@@ -168,6 +173,7 @@ export function buildFlowElements(
         data: {
           name: p.name,
           relationship: p.relationship,
+          avatarUrl: p.avatar_url ?? null,
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
         },
@@ -176,16 +182,29 @@ export function buildFlowElements(
     })
   }
 
-  const rfEdges: Edge[] = edges.map((e) => ({
-    id: e.id,
-    source: e.source_node_id,
-    target: e.target_node_id,
-    type: 'labeled',
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    data: { label: relationshipTitle(e.label) },
-    style: { strokeWidth: 2 },
-    zIndex: 1,
-  }))
+  const rfEdges: Edge[] = displayEdges.map((e) => {
+    const na = nameById.get(e.source_node_id) ?? '?'
+    const nb = nameById.get(e.target_node_id) ?? '?'
+    const sortedNames = [na, nb].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' })
+    )
+    const displayName = `${sortedNames[0]} · ${sortedNames[1]}`
+    const relationshipLabel = e.label
+  
+    return {
+      id: e.id,
+      source: e.source_node_id,
+      target: e.target_node_id,
+      type: 'labeled',
+      data: {
+        displayName,
+        relationshipLabel,
+        tooltip: `${displayName} — ${relationshipLabel}`,
+      },
+      style: { strokeWidth: 2 },
+      zIndex: 1,
+    }
+  })
 
   return { nodes: [...constellationNodes, ...personNodes], edges: rfEdges }
 }
