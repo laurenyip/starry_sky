@@ -1,122 +1,112 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ForceGraphProps } from 'react-force-graph-2d'
-import type { LinkObject, NodeObject } from 'react-force-graph-2d'
+import { ConstellationNode } from '@/components/friend-graph/constellation-node'
+import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
+import { PersonNode } from '@/components/friend-graph/person-node'
+import {
+  buildFlowElements,
+  type DbEdge,
+  type DbLocation,
+  type DbPerson,
+} from '@/lib/flow-build'
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import { useEffect, useMemo } from 'react'
 
-export type PublicGraphNode = NodeObject<{
-  id: string
-  name: string
-  [key: string]: unknown
-}>
+const nodeTypes = { constellation: ConstellationNode, person: PersonNode }
+const edgeTypes = { labeled: LabeledEdge }
 
-export type PublicGraphLink = LinkObject<
-  PublicGraphNode,
-  { id: string; label: string | null }
->
-
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-  ssr: false,
-}) as React.ComponentType<ForceGraphProps<PublicGraphNode, PublicGraphLink>>
-
-function labelColor() {
-  if (typeof window === 'undefined') return '#27272a'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-    ? '#d4d4d8'
-    : '#27272a'
+export type PublicGraphPayload = {
+  locations: DbLocation[]
+  people: DbPerson[]
+  edges: DbEdge[]
 }
 
-export function PublicProfileGraph({
-  graphData,
-}: {
-  graphData: {
-    nodes: PublicGraphNode[]
-    links: PublicGraphLink[]
-  }
-}) {
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const [size, setSize] = useState({ width: 0, height: 0 })
+export function PublicProfileGraph({ graphData }: { graphData: PublicGraphPayload }) {
+  return (
+    <ReactFlowProvider>
+      <PublicGraphInner graphData={graphData} />
+    </ReactFlowProvider>
+  )
+}
 
-  useEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
-    const ro = new ResizeObserver((entries) => {
-      const cr = entries[0]?.contentRect
-      if (!cr) return
-      setSize({
-        width: Math.max(1, Math.floor(cr.width)),
-        height: Math.max(1, Math.floor(cr.height)),
-      })
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const fgProps = useMemo<ForceGraphProps<PublicGraphNode, PublicGraphLink>>(
-    () => ({
-      graphData,
-      nodeId: 'id',
-      linkSource: 'source',
-      linkTarget: 'target',
-      backgroundColor: 'transparent',
-      nodeLabel: (n) => String(n.name),
-      linkLabel: (l) => (l.label ? String(l.label) : ''),
-      nodeCanvasObjectMode: () => 'after',
-      nodeCanvasObject: (node, ctx, globalScale) => {
-        if (node.x === undefined || node.y === undefined) return
-        const fill = labelColor()
-        const fontSize = 13 / globalScale
-        ctx.font = `${fontSize}px ui-sans-serif, system-ui, sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'top'
-        ctx.fillStyle = fill
-        ctx.fillText(String(node.name), node.x, node.y + 5 / globalScale)
-      },
-      linkCanvasObjectMode: () => 'after',
-      linkCanvasObject: (link, ctx, globalScale) => {
-        const text = link.label
-        if (!text) return
-        const s = link.source as PublicGraphNode
-        const t = link.target as PublicGraphNode
-        if (
-          s?.x === undefined ||
-          s?.y === undefined ||
-          t?.x === undefined ||
-          t?.y === undefined
-        ) {
-          return
-        }
-        const x = (s.x + t.x) / 2
-        const y = (s.y + t.y) / 2
-        const fs = 11 / globalScale
-        ctx.font = `${fs}px ui-sans-serif, system-ui, sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillStyle = labelColor()
-        ctx.fillText(String(text), x, y)
-      },
-      enableNodeDrag: false,
-      cooldownTicks: 100,
-      linkDirectionalArrowLength: 10,
-      linkDirectionalArrowRelPos: 1,
-      linkDirectionalArrowColor: () =>
-        typeof window !== 'undefined' &&
-        window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? '#a1a1aa'
-          : '#52525b',
-    }),
-    [graphData]
+function PublicGraphInner({ graphData }: { graphData: PublicGraphPayload }) {
+  const needsForceLayout = useMemo(
+    () =>
+      graphData.people.some(
+        (p) =>
+          p.position_x == null ||
+          p.position_y == null ||
+          !Number.isFinite(Number(p.position_x)) ||
+          !Number.isFinite(Number(p.position_y))
+      ),
+    [graphData.people]
   )
 
+  const { nodes: initialNodes, edges: initialEdges } = buildFlowElements(
+    graphData.locations,
+    graphData.people,
+    graphData.edges,
+    { runForceLayout: needsForceLayout, shiftConnect: false }
+  )
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  useEffect(() => {
+    const { nodes: n, edges: e } = buildFlowElements(
+      graphData.locations,
+      graphData.people,
+      graphData.edges,
+      { runForceLayout: needsForceLayout, shiftConnect: false }
+    )
+    setNodes(n)
+    setEdges(e)
+  }, [
+    graphData.locations,
+    graphData.people,
+    graphData.edges,
+    needsForceLayout,
+    setNodes,
+    setEdges,
+  ])
+
   return (
-    <div
-      ref={wrapRef}
-      className="h-full min-h-[min(50vh,28rem)] w-full min-w-0 flex-1"
-    >
-      {size.width > 0 && size.height > 0 ? (
-        <ForceGraph2D width={size.width} height={size.height} {...fgProps} />
-      ) : null}
+    <div className="h-[min(70vh,720px)] min-h-[420px] w-full">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        panOnDrag
+        zoomOnScroll
+        fitView
+        minZoom={0.3}
+        maxZoom={1.3}
+        className="bg-zinc-50/50 dark:bg-zinc-950/40"
+      >
+        <Background gap={22} size={1.2} />
+        <Controls showInteractive={false} />
+        <MiniMap
+          className="!bg-background/90 dark:!bg-zinc-900/90"
+          zoomable
+          pannable
+          maskColor="rgba(0,0,0,0.12)"
+        />
+      </ReactFlow>
     </div>
   )
 }

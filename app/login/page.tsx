@@ -37,6 +37,22 @@ export default function LoginPage() {
       return
     }
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (!profile) {
+        router.refresh()
+        router.push('/complete-profile')
+        return
+      }
+    }
+
     router.refresh()
     router.push('/dashboard')
   }

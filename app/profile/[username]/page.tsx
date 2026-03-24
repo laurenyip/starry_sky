@@ -1,12 +1,9 @@
 import { createClient, type PostgrestError } from '@supabase/supabase-js'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import type { DbEdge, DbLocation, DbPerson } from '@/lib/flow-build'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
-import {
-  PublicProfileGraph,
-  type PublicGraphLink,
-  type PublicGraphNode,
-} from './public-graph'
+import { PublicProfileGraph, type PublicGraphPayload } from './public-graph'
 
 type PageProps = { params: Promise<{ username: string }> }
 
@@ -59,7 +56,7 @@ export async function generateMetadata({
 type LoadOk = {
   ok: true
   username: string
-  graphData: { nodes: PublicGraphNode[]; links: PublicGraphLink[] }
+  graphData: PublicGraphPayload
   usedServiceRole: boolean
   fetchError: PostgrestError | null
 }
@@ -102,39 +99,56 @@ async function loadProfileAndGraph(
   const service = createServiceRoleClient()
   const db = service ?? anon
 
-  const [nodesRes, edgesRes] = await Promise.all([
-    db.from('nodes').select('id, name, attributes').eq('owner_id', profile.id),
+  const [locsRes, nodesRes, edgesRes] = await Promise.all([
+    db
+      .from('locations')
+      .select('id,name,user_id')
+      .eq('user_id', profile.id)
+      .order('name'),
+    db
+      .from('nodes')
+      .select(
+        'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y'
+      )
+      .eq('owner_id', profile.id),
     db
       .from('edges')
-      .select('id, source_node_id, target_node_id, label')
+      .select('id,owner_id,source_node_id,target_node_id,label')
       .eq('owner_id', profile.id),
   ])
 
-  const rawNodes = nodesRes.data ?? []
-  const rawEdges = edgesRes.data ?? []
+  const fetchErr =
+    locsRes.error ?? nodesRes.error ?? edgesRes.error ?? null
 
-  const fetchErr = nodesRes.error ?? edgesRes.error ?? null
-
-  const nodes: PublicGraphNode[] = rawNodes.map((n) => {
-    const attributes = (n.attributes as Record<string, unknown>) ?? {}
-    return {
-      id: n.id,
-      name: n.name,
-      ...attributes,
-    }
-  })
-
-  const links: PublicGraphLink[] = rawEdges.map((e) => ({
-    id: e.id,
-    source: e.source_node_id,
-    target: e.target_node_id,
-    label: e.label,
+  const locations = (locsRes.data ?? []) as DbLocation[]
+  const rawPeople = (nodesRes.data ?? []) as Record<string, unknown>[]
+  const people: DbPerson[] = rawPeople.map((r) => ({
+    id: String(r.id),
+    name: String(r.name),
+    location_id: (r.location_id as string | null) ?? null,
+    relationship: String(r.relationship ?? 'friend'),
+    things_to_remember: String(r.things_to_remember ?? ''),
+    custom_attributes:
+      (r.custom_attributes as Record<string, unknown> | null) ?? {},
+    position_x:
+      r.position_x == null ? null : Number(r.position_x as number),
+    position_y:
+      r.position_y == null ? null : Number(r.position_y as number),
   }))
+
+  const edges: DbEdge[] = (edgesRes.data ?? []).map((e) => ({
+    id: e.id as string,
+    source_node_id: e.source_node_id as string,
+    target_node_id: e.target_node_id as string,
+    label: String(e.label ?? 'friend'),
+  }))
+
+  const graphData: PublicGraphPayload = { locations, people, edges }
 
   return {
     ok: true,
     username: profile.username as string,
-    graphData: { nodes, links },
+    graphData,
     usedServiceRole: Boolean(service),
     fetchError: fetchErr,
   }
@@ -190,7 +204,7 @@ export default async function PublicProfilePage({ params }: PageProps) {
         ) : null}
       </div>
 
-      <div className="flex min-h-0 min-h-[50vh] flex-1 flex-col">
+      <div className="flex min-h-0 min-h-[50vh] flex-1 flex-col px-2 pb-4 pt-2 sm:px-4">
         <PublicProfileGraph graphData={graphData} />
       </div>
     </div>
