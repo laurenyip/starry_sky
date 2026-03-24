@@ -42,10 +42,12 @@ FriendGraph is a web app for building a visual **network of people** and **how t
 
 1. Push the repo to GitHub (or GitLab / Bitbucket) and **import the project** in the [Vercel dashboard](https://vercel.com).
 
-2. Under **Settings → Environment Variables**, add at least:
+2. Under **Settings → Environment Variables**, add at least (for **Production** and **Preview** as needed):
 
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+   Without these, the site can still build, but auth and the graph will not work until they are set and you redeploy.
 
    For production **public profile** routes to show visitors each user’s graph, also add:
 

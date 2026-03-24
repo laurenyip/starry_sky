@@ -221,6 +221,7 @@ export default function DashboardPage() {
   }, [finishCloseNodePanel])
 
   useEffect(() => {
+    if (!supabase) return
     void supabase.auth.getUser().then(({ data: { user }, error }) => {
       if (error) {
         setAuthError(error.message)
@@ -239,7 +240,7 @@ export default function DashboardPage() {
   }, [supabase, router])
 
   const loadGraph = useCallback(async () => {
-    if (!userId) return
+    if (!userId || !supabase) return
     setLoadingGraph(true)
     setGraphError(null)
     const [nodesRes, edgesRes] = await Promise.all([
@@ -380,7 +381,7 @@ export default function DashboardPage() {
 
   async function handleAddPerson(e: React.FormEvent) {
     e.preventDefault()
-    if (!userId) return
+    if (!userId || !supabase) return
     setSubmitError(null)
     const name = newName.trim()
     if (!name) {
@@ -416,7 +417,7 @@ export default function DashboardPage() {
 
   async function handleAddConnection(e: React.FormEvent) {
     e.preventDefault()
-    if (!userId) return
+    if (!userId || !supabase) return
     setConnectionSubmitError(null)
 
     if (!personAId || !personBId) {
@@ -477,7 +478,7 @@ export default function DashboardPage() {
   }
 
   async function handleSaveNodeAttributes() {
-    if (!selectedNode || !userId) return
+    if (!selectedNode || !userId || !supabase) return
     setPanelSaveError(null)
     setPanelSaving(true)
     const attributes = attributesFromPanelRows(nodePanelRows)
@@ -500,7 +501,7 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteNode() {
-    if (!selectedNode || !userId) return
+    if (!selectedNode || !userId || !supabase) return
     setPanelSaveError(null)
     setPanelDeleting(true)
     const { error } = await supabase

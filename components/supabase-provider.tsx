@@ -1,6 +1,6 @@
 'use client'
 
-import { createSupabaseBrowserClient } from '@/lib/supabase/client'
+import { createBrowserClient } from '@supabase/auth-helpers-nextjs'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import {
   createContext,
@@ -11,29 +11,38 @@ import {
 } from 'react'
 
 type SupabaseContextValue = {
-  supabase: SupabaseClient
+  supabase: SupabaseClient | null
   session: Session | null
 }
 
 const SupabaseContext = createContext<SupabaseContextValue | null>(null)
 
 export function SupabaseProvider({ children }: { children: React.ReactNode }) {
-  const [supabase] = useState(() => createSupabaseBrowserClient())
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null)
   const [session, setSession] = useState<Session | null>(null)
 
   useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+    if (!url || !key) {
+      return
+    }
+
+    const client = createBrowserClient(url, key)
+    setSupabase(client)
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = client.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession)
     })
 
-    void supabase.auth.getSession().then(({ data: { session: current } }) => {
+    void client.auth.getSession().then(({ data: { session: current } }) => {
       setSession(current)
     })
 
     return () => subscription.unsubscribe()
-  }, [supabase])
+  }, [])
 
   const value = useMemo(
     () => ({ supabase, session }),

@@ -17,6 +17,12 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    if (!supabase) {
+      setError(
+        'App configuration is still loading or Supabase environment variables are missing.'
+      )
+      return
+    }
     setLoading(true)
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -94,7 +100,7 @@ export default function LoginPage() {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !supabase}
           className="mt-2 inline-flex items-center justify-center gap-2 rounded-md bg-foreground py-2.5 text-sm font-medium text-background transition-opacity disabled:opacity-60"
         >
           {loading ? (

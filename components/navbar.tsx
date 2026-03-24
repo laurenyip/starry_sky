@@ -13,6 +13,8 @@ export function Navbar() {
   const [logoutError, setLogoutError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!supabase) return
+
     if (!session?.user?.id) {
       setUsername(null)
       setProfileError(null)
@@ -43,6 +45,7 @@ export function Navbar() {
   }, [session?.user?.id, supabase])
 
   async function handleLogout() {
+    if (!supabase) return
     setLogoutError(null)
     const { error } = await supabase.auth.signOut()
     if (error) {
