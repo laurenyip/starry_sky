@@ -15,16 +15,24 @@ export function layoutPersonNodesInCluster(
   personIds: string[],
   internalLinks: { source: string; target: string }[],
   width: number,
-  height: number
+  height: number,
+  /** Pinned local positions (manual pos_x/pos_y); fixed in the simulation. */
+  fixedPositions?: Map<string, { x: number; y: number }>
 ): Map<string, { x: number; y: number }> {
   const pad = 44
   const cx = width / 2
   const cy = height / 2
-  const simNodes: SimNode[] = personIds.map((id, i) => ({
-    id,
-    x: cx + (i % 6) * 12,
-    y: cy + (i % 4) * 10,
-  }))
+  const simNodes: SimNode[] = personIds.map((id, i) => {
+    const pin = fixedPositions?.get(id)
+    if (pin) {
+      return { id, x: pin.x, y: pin.y, fx: pin.x, fy: pin.y }
+    }
+    return {
+      id,
+      x: cx + (i % 6) * 12,
+      y: cy + (i % 4) * 10,
+    }
+  })
   const byId = new Map(simNodes.map((n) => [n.id, n]))
   const simLinks = internalLinks
     .map((l) => ({

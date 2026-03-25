@@ -49,22 +49,38 @@ create table public.nodes (
 create index nodes_owner_id_idx on public.nodes (owner_id);
 create index nodes_location_id_idx on public.nodes (location_id);
 
+create table public.communities (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles (id) on delete cascade,
+  name text not null,
+  color text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index communities_owner_name_lower_idx
+  on public.communities (owner_id, lower(trim(name)));
+
+create index communities_owner_id_idx on public.communities (owner_id);
+
 create table public.edges (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references public.profiles (id) on delete cascade,
   source_node_id uuid not null references public.nodes (id) on delete cascade,
   target_node_id uuid not null references public.nodes (id) on delete cascade,
   label text not null default 'friend',
+  community_id uuid references public.communities (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
 create index edges_owner_id_idx on public.edges (owner_id);
 create index edges_source_node_id_idx on public.edges (source_node_id);
 create index edges_target_node_id_idx on public.edges (target_node_id);
+create index edges_community_id_idx on public.edges (community_id);
 
 alter table public.profiles enable row level security;
 alter table public.locations enable row level security;
 alter table public.nodes enable row level security;
+alter table public.communities enable row level security;
 alter table public.edges enable row level security;
 
 -- Profiles
@@ -133,6 +149,28 @@ create policy "nodes_delete_own"
   to authenticated
   using (owner_id = auth.uid());
 
+-- Communities (edge line colors)
+create policy "communities_select_own"
+  on public.communities for select
+  to authenticated
+  using (owner_id = auth.uid());
+
+create policy "communities_insert_own"
+  on public.communities for insert
+  to authenticated
+  with check (owner_id = auth.uid());
+
+create policy "communities_update_own"
+  on public.communities for update
+  to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+create policy "communities_delete_own"
+  on public.communities for delete
+  to authenticated
+  using (owner_id = auth.uid());
+
 -- Edges
 create policy "edges_select_own"
   on public.edges for select
@@ -152,6 +190,13 @@ create policy "edges_insert_own"
       select 1 from public.nodes n
       where n.id = target_node_id and n.owner_id = auth.uid()
     )
+    and (
+      community_id is null
+      or exists (
+        select 1 from public.communities c
+        where c.id = community_id and c.owner_id = auth.uid()
+      )
+    )
   );
 
 create policy "edges_update_own"
@@ -168,6 +213,13 @@ create policy "edges_update_own"
       select 1 from public.nodes n
       where n.id = target_node_id and n.owner_id = auth.uid()
     )
+    and (
+      community_id is null
+      or exists (
+        select 1 from public.communities c
+        where c.id = community_id and c.owner_id = auth.uid()
+      )
+    )
   );
 
 create policy "edges_delete_own"
@@ -180,4 +232,5 @@ grant insert, update, delete on table public.profiles to authenticated;
 
 grant select, insert, update, delete on table public.locations to authenticated;
 grant select, insert, update, delete on table public.nodes to authenticated;
+grant select, insert, update, delete on table public.communities to authenticated;
 grant select, insert, update, delete on public.edges to authenticated;

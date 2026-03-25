@@ -12,6 +12,8 @@ export type LabeledEdgeData = {
   displayName: string
   relationshipLabel: string
   tooltip: string
+  baseStroke: string
+  communityKey: string
 }
 
 export function LabeledEdge({
@@ -35,9 +37,21 @@ export function LabeledEdge({
     targetPosition,
   })
 
-  const stroke = selected ? '#7c3aed' : undefined
-  const baseStroke =
-    typeof style?.stroke === 'string' ? style.stroke : '#71717a'
+  const fallback = data?.baseStroke ?? '#AAAAAA'
+  const stroke =
+    typeof style?.stroke === 'string' && style.stroke.length > 0
+      ? style.stroke
+      : fallback
+
+  const strokeWidth =
+    typeof style?.strokeWidth === 'number' ? style.strokeWidth : 2
+
+  const opacity =
+    typeof style?.opacity === 'number' ? style.opacity : 1
+
+  const transition =
+    (style?.transition as string | undefined) ??
+    'stroke 0.28s ease, stroke-width 0.28s ease, opacity 0.28s ease'
 
   const rel = (data?.relationshipLabel ?? '').trim() || '—'
 
@@ -50,8 +64,10 @@ export function LabeledEdge({
         markerStart={undefined}
         style={{
           ...style,
-          stroke: stroke ?? baseStroke,
-          strokeWidth: selected ? 3 : 2,
+          stroke,
+          strokeWidth,
+          opacity,
+          transition,
         }}
         interactionWidth={28}
       />

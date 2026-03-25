@@ -8,13 +8,19 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 
-const ALLOWED_IMAGE = ['image/jpeg', 'image/png', 'image/webp'] as const
-
-function extFromMime(mime: string): string {
+function extFromFile(file: File): string {
+  const mime = file.type
   if (mime === 'image/jpeg') return 'jpg'
   if (mime === 'image/png') return 'png'
   if (mime === 'image/webp') return 'webp'
+  const n = file.name.split('.').pop()
+  if (n && /^[a-zA-Z0-9]+$/.test(n)) return n.toLowerCase().slice(0, 8)
   return 'jpg'
+}
+
+/** Profile avatars use numeric timestamp filenames; node avatars use UUIDs. */
+function isProfileAvatarObjectName(name: string): boolean {
+  return /^\d+\.(jpg|jpeg|png|webp)$/i.test(name) || name.startsWith('profile.')
 }
 
 export default function AccountPage() {
@@ -32,11 +38,11 @@ export default function AccountPage() {
   const [editUsername, setEditUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [avatarFile, setAvatarFile] = useState<File | null>(null)
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
 
   const [saving, setSaving] = useState(false)
+  const [photoUploading, setPhotoUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
 
   const loadProfile = useCallback(async () => {
     if (!supabase) return
@@ -77,23 +83,71 @@ export default function AccountPage() {
     void loadProfile()
   }, [loadProfile])
 
-  useEffect(() => {
-    if (!avatarFile) {
-      setAvatarPreview(null)
+  async function uploadAndSaveAvatar(file: File) {
+    if (!supabase || !userId) return
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Please choose an image file.')
+      showToast('Please choose an image file.', 'error')
       return
     }
-    const url = URL.createObjectURL(avatarFile)
-    setAvatarPreview(url)
-    return () => URL.revokeObjectURL(url)
-  }, [avatarFile])
+
+    setPhotoUploading(true)
+    setPhotoError(null)
+    setError(null)
+
+    const ext = extFromFile(file)
+    const path = `${userId}/${Date.now()}.${ext}`
+
+    const { error: upErr } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true, cacheControl: '3600' })
+
+    if (upErr) {
+      console.error('[account] storage upload failed', upErr)
+      setPhotoError(upErr.message)
+      showToast(upErr.message, 'error')
+      setPhotoUploading(false)
+      return
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from('avatars').getPublicUrl(path)
+
+    const { data: updated, error: dbErr } = await supabase
+      .from('profiles')
+      .update({ avatar_url: publicUrl })
+      .eq('id', userId)
+      .select('avatar_url')
+      .maybeSingle()
+
+    if (dbErr) {
+      console.error('[account] profiles.avatar_url update failed after upload', dbErr)
+      setPhotoError(
+        `Photo uploaded but saving your link failed: ${dbErr.message}`
+      )
+      showToast(dbErr.message, 'error')
+      setPhotoUploading(false)
+      return
+    }
+
+    const saved =
+      updated?.avatar_url == null || updated.avatar_url === ''
+        ? null
+        : String(updated.avatar_url)
+    setAvatarUrl(saved ?? publicUrl)
+    setPhotoUploading(false)
+    showToast('Profile photo saved.', 'success')
+    router.refresh()
+  }
 
   function startEdit() {
     setEditMode(true)
     setEditUsername(username)
     setPassword('')
     setConfirmPassword('')
-    setAvatarFile(null)
     setError(null)
+    setPhotoError(null)
   }
 
   function cancelEdit() {
@@ -101,8 +155,8 @@ export default function AccountPage() {
     setEditUsername(username)
     setPassword('')
     setConfirmPassword('')
-    setAvatarFile(null)
     setError(null)
+    setPhotoError(null)
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -139,40 +193,10 @@ export default function AccountPage() {
       }
     }
 
-    let nextAvatarUrl = avatarUrl
-
-    if (avatarFile) {
-      if (!ALLOWED_IMAGE.includes(avatarFile.type as (typeof ALLOWED_IMAGE)[number])) {
-        setError('Please use JPEG, PNG, or WebP for your profile picture.')
-        setSaving(false)
-        return
-      }
-      const ext = extFromMime(avatarFile.type)
-      const path = `${userId}/profile.${ext}`
-      const { error: upErr } = await supabase.storage
-        .from('avatars')
-        .upload(path, avatarFile, { upsert: true, cacheControl: '3600' })
-      if (upErr) {
-        setError(upErr.message)
-        setSaving(false)
-        return
-      }
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from('avatars').getPublicUrl(path)
-      nextAvatarUrl = publicUrl
-    }
-
     const { error: upProfile } = await supabase
       .from('profiles')
-      .upsert(
-        {
-          id: userId,
-          username: trimmed,
-          avatar_url: nextAvatarUrl,
-        },
-        { onConflict: 'id' }
-      )
+      .update({ username: trimmed })
+      .eq('id', userId)
 
     if (upProfile) {
       setError(upProfile.message)
@@ -181,11 +205,9 @@ export default function AccountPage() {
     }
 
     setUsername(trimmed)
-    setAvatarUrl(nextAvatarUrl)
     setEditMode(false)
     setPassword('')
     setConfirmPassword('')
-    setAvatarFile(null)
     setSaving(false)
     showToast('Profile saved.', 'success')
     router.refresh()
@@ -193,26 +215,34 @@ export default function AccountPage() {
 
   async function removeProfilePhoto() {
     if (!supabase || !userId) return
-    setSaving(true)
+    setPhotoUploading(true)
+    setPhotoError(null)
     setError(null)
+
     const { data: list } = await supabase.storage.from('avatars').list(userId)
-    const match = list?.find((o) => o.name.startsWith('profile.'))
-    if (match) {
-      await supabase.storage.from('avatars').remove([`${userId}/${match.name}`])
+    for (const o of list ?? []) {
+      if (isProfileAvatarObjectName(o.name)) {
+        await supabase.storage
+          .from('avatars')
+          .remove([`${userId}/${o.name}`])
+      }
     }
+
     const { error: uerr } = await supabase
       .from('profiles')
       .update({ avatar_url: null })
       .eq('id', userId)
-    setSaving(false)
+
+    setPhotoUploading(false)
+
     if (uerr) {
-      setError(uerr.message)
+      console.error('[account] remove avatar failed', uerr)
+      setPhotoError(uerr.message)
       showToast(uerr.message, 'error')
       return
     }
+
     setAvatarUrl(null)
-    setAvatarFile(null)
-    setAvatarPreview(null)
     showToast('Profile photo removed.', 'success')
     router.refresh()
   }
@@ -225,17 +255,16 @@ export default function AccountPage() {
     )
   }
 
-  const displayAvatar = editMode
-    ? avatarPreview ?? avatarUrl
-    : avatarUrl
-
-  const initials = username
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((s) => s[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || '?'
+  const displayAvatar = avatarUrl
+  const initialsFrom = editMode ? editUsername || username : username
+  const initials =
+    initialsFrom
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((s) => s[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || '?'
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-10">
@@ -246,36 +275,90 @@ export default function AccountPage() {
         Username, password, and profile picture for your account.
       </p>
 
+      <section className="mt-8 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+        <p className="text-sm font-medium">Profile photo</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Saved to your account as soon as you choose a photo.
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800">
+            {displayAvatar ? (
+              <Image
+                src={displayAvatar}
+                alt=""
+                width={96}
+                height={96}
+                className="h-full w-full object-cover"
+                unoptimized
+              />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-zinc-600 dark:text-zinc-300">
+                {initials}
+              </span>
+            )}
+            {photoUploading ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                <LoadingSpinner className="flex-col gap-1" label="Uploading…" />
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <input
+              id="account-avatar-input"
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={photoUploading}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (f) void uploadAndSaveAvatar(f)
+              }}
+            />
+            <button
+              type="button"
+              disabled={photoUploading}
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-50"
+              onClick={() =>
+                document.getElementById('account-avatar-input')?.click()
+              }
+            >
+              Change photo
+            </button>
+            {avatarUrl ? (
+              <button
+                type="button"
+                disabled={photoUploading}
+                className="text-left text-sm text-red-600 underline disabled:opacity-50 dark:text-red-400"
+                onClick={() => void removeProfilePhoto()}
+              >
+                Remove photo
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {photoError ? (
+          <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+            {photoError}
+          </p>
+        ) : null}
+      </section>
+
       {!editMode ? (
         <div className="mt-8 space-y-6">
-          <div className="flex items-center gap-4">
-            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800">
-              {displayAvatar ? (
-                <Image
-                  src={displayAvatar}
-                  alt=""
-                  width={80}
-                  height={80}
-                  className="h-full w-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-lg font-semibold">
-                  {initials}
-                </span>
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-zinc-500">Username</p>
-              <p className="truncate text-lg font-semibold">{username}</p>
-            </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-zinc-500">Username</p>
+            <p className="truncate text-lg font-semibold">{username}</p>
           </div>
           <button
             type="button"
             onClick={startEdit}
             className="rounded-md bg-foreground px-4 py-2.5 text-sm font-medium text-background"
           >
-            Edit
+            Edit username &amp; password
           </button>
         </div>
       ) : (
@@ -291,48 +374,6 @@ export default function AccountPage() {
               {error}
             </div>
           ) : null}
-
-          <div>
-            <p className="text-sm font-medium">Profile picture</p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <label className="relative flex h-20 w-20 cursor-pointer overflow-hidden rounded-full border-2 border-zinc-200 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800">
-                {displayAvatar ? (
-                  <Image
-                    src={displayAvatar}
-                    alt=""
-                    width={80}
-                    height={80}
-                    className="h-full w-full object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-lg font-semibold">
-                    {initials}
-                  </span>
-                )}
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    e.target.value = ''
-                    setAvatarFile(f ?? null)
-                  }}
-                />
-              </label>
-              {avatarUrl || avatarPreview ? (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void removeProfilePhoto()}
-                  className="text-sm text-red-600 underline dark:text-red-400"
-                >
-                  Remove photo
-                </button>
-              ) : null}
-            </div>
-          </div>
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="acc-username" className="text-sm font-medium">
@@ -379,7 +420,7 @@ export default function AccountPage() {
           <div className="flex gap-2 pt-2">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || photoUploading}
               className="flex-1 rounded-md bg-foreground py-2.5 text-sm font-medium text-background disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save'}

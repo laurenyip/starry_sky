@@ -1,6 +1,6 @@
 'use client'
 
-import { createBrowserClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@/lib/supabase'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import {
   createContext,
@@ -28,7 +28,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    const client = createBrowserClient(url, key)
+    const client = createClient()
     setSupabase(client)
 
     const {

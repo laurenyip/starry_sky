@@ -66,6 +66,10 @@ export function Navbar() {
   }
 
   const displayName = username ?? session?.user.email?.split('@')[0] ?? null
+  const navInitial =
+    (username ?? session?.user.email?.split('@')[0] ?? '?')
+      .slice(0, 1)
+      .toUpperCase()
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-200/80 bg-background/80 backdrop-blur-md dark:border-zinc-800/80">
@@ -92,8 +96,8 @@ export function Navbar() {
                   href={`/profile/${encodeURIComponent(username)}`}
                   className="flex max-w-[10rem] items-center gap-2 sm:max-w-[14rem]"
                 >
-                  {profileAvatarUrl ? (
-                    <span className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-zinc-200 dark:border-zinc-600">
+                  <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-zinc-200 bg-zinc-100 text-[10px] font-bold text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                    {profileAvatarUrl ? (
                       <Image
                         src={profileAvatarUrl}
                         alt=""
@@ -102,15 +106,33 @@ export function Navbar() {
                         className="h-full w-full object-cover"
                         unoptimized
                       />
-                    </span>
-                  ) : null}
+                    ) : (
+                      navInitial
+                    )}
+                  </span>
                   <span className="truncate font-medium text-zinc-600 transition-colors hover:text-foreground dark:text-zinc-400 dark:hover:text-zinc-100">
                     {displayName}
                   </span>
                 </Link>
               ) : (
-                <span className="max-w-[9rem] truncate text-zinc-600 sm:max-w-[12rem] dark:text-zinc-400">
-                  {displayName}
+                <span className="flex max-w-[9rem] items-center gap-2 sm:max-w-[12rem]">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-zinc-100 text-[10px] font-bold text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                    {profileAvatarUrl ? (
+                      <Image
+                        src={profileAvatarUrl}
+                        alt=""
+                        width={28}
+                        height={28}
+                        className="h-full w-full object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      navInitial
+                    )}
+                  </span>
+                  <span className="truncate text-zinc-600 dark:text-zinc-400">
+                    {displayName}
+                  </span>
                 </span>
               )}
               <button

@@ -1,0 +1,100 @@
+'use client'
+
+import { NO_COMMUNITY_KEY } from '@/lib/edge-highlight'
+import { DEFAULT_EDGE_NEUTRAL } from '@/lib/flow-build'
+import {
+  RELATION_TYPE_COLOR_MAP,
+  RELATION_TYPE_ORDER,
+} from '@/lib/relation-type-colors'
+
+export type CommunityRow = { id: string; name: string; color: string }
+
+export function CommunitiesLegend({
+  communities,
+  activeCommunityKey,
+  onPickCommunity,
+  onNewCommunity,
+}: {
+  communities: CommunityRow[]
+  activeCommunityKey: string | null
+  onPickCommunity: (key: string) => void
+  onNewCommunity: () => void
+}) {
+  return (
+    <div className="pointer-events-auto absolute bottom-4 left-4 z-20 w-[min(16rem,calc(100%-2rem))] rounded-xl border border-zinc-200/90 bg-background/95 p-3 shadow-lg backdrop-blur-md dark:border-zinc-700/90">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+        Communities
+      </p>
+      <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+        <li>
+          <button
+            type="button"
+            onClick={() => onPickCommunity(NO_COMMUNITY_KEY)}
+            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+              activeCommunityKey === NO_COMMUNITY_KEY
+                ? 'bg-zinc-200/80 dark:bg-zinc-700/80'
+                : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <span
+              className="h-1 w-8 shrink-0 rounded-full"
+              style={{ backgroundColor: DEFAULT_EDGE_NEUTRAL }}
+            />
+            <span className="truncate">No community</span>
+          </button>
+        </li>
+        {communities.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              onClick={() => onPickCommunity(c.id)}
+              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+                activeCommunityKey === c.id
+                  ? 'bg-zinc-200/80 dark:bg-zinc-700/80'
+                  : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              <span
+                className="h-1 w-8 shrink-0 rounded-full"
+                style={{ backgroundColor: c.color }}
+              />
+              <span className="truncate">{c.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onNewCommunity}
+        className="mt-3 w-full rounded-lg border border-dashed border-zinc-300 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800/80"
+      >
+        + New community
+      </button>
+
+      <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+        Relation to you
+      </p>
+      <p className="mt-1 text-[10px] leading-snug text-zinc-500">
+        Node ring colour comes from how each person is linked to{' '}
+        <span className="font-medium text-zinc-600 dark:text-zinc-400">You</span>{' '}
+        on your graph.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {RELATION_TYPE_ORDER.map((key) => (
+          <li
+            key={key}
+            className="flex items-center gap-2 rounded-md px-1.5 py-0.5 text-left text-xs text-zinc-700 dark:text-zinc-300"
+          >
+            <span
+              className="h-3 w-3 shrink-0 rounded-full border border-zinc-300/80 dark:border-zinc-600"
+              style={{
+                backgroundColor: RELATION_TYPE_COLOR_MAP[key],
+              }}
+            />
+            <span className="capitalize">{key}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}

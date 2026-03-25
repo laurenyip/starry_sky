@@ -1,6 +1,8 @@
 import type { Edge, Node } from '@xyflow/react'
+import { NO_COMMUNITY_KEY } from '@/lib/edge-highlight'
 import { dedupeEdgesForGraph } from '@/lib/edge-helpers'
 import { layoutPersonNodesInCluster } from '@/lib/force-layout-cluster'
+import { relationTypeToBorderColor } from '@/lib/relation-type-colors'
 import {
   CONSTELLATION_HEIGHT,
   CONSTELLATION_NODE_ID,
@@ -19,20 +21,94 @@ export type DbPerson = {
   custom_attributes: Record<string, unknown> | null
   position_x: number | null
   position_y: number | null
+  /** Manual pin (drag); overrides layout when set. */
+  pos_x: number | null
+  pos_y: number | null
   avatar_url: string | null
-  constellation_ids?: string[]
+  is_self: boolean
 }
 export type DbEdge = {
   id: string
   source_node_id: string
   target_node_id: string
   label: string
+  community_id: string | null
+  relation_type: string | null
 }
+
+export const DEFAULT_EDGE_NEUTRAL = '#AAAAAA'
 
 export type FlowBuildOptions = {
   highlightPersonId?: string | null
   shiftConnect?: boolean
   runForceLayout?: boolean
+  /** id -> hex color for edge strokes */
+  communityColors?: Map<string, string>
+  /** Node id for the signed-in user ("You"); used with edge.relation_type for borders. */
+  selfNodeId?: string | null
+}
+
+function hasPinnedLocal(p: DbPerson): boolean {
+  return (
+    p.pos_x != null &&
+    p.pos_y != null &&
+    Number.isFinite(p.pos_x) &&
+    Number.isFinite(p.pos_y)
+  )
+}
+
+function hasSavedLayout(p: DbPerson): boolean {
+  return (
+    p.position_x != null &&
+    p.position_y != null &&
+    Number.isFinite(p.position_x) &&
+    Number.isFinite(p.position_y)
+  )
+}
+
+function buildPositionsForGroup(
+  group: DbPerson[],
+  locInternal: { source: string; target: string }[],
+  runForceLayout: boolean | undefined
+): Map<string, { x: number; y: number }> {
+  const pinnedLocal = new Map<string, { x: number; y: number }>()
+  for (const p of group) {
+    if (hasPinnedLocal(p))
+      pinnedLocal.set(p.id, { x: p.pos_x!, y: p.pos_y! })
+  }
+  const needsForce = Boolean(
+    runForceLayout &&
+      group.some((p) => !hasPinnedLocal(p) && !hasSavedLayout(p))
+  )
+  if (needsForce && group.length > 0) {
+    return layoutPersonNodesInCluster(
+      group.map((q) => q.id),
+      locInternal,
+      CONSTELLATION_WIDTH,
+      CONSTELLATION_HEIGHT,
+      pinnedLocal
+    )
+  }
+  const positions = new Map<string, { x: number; y: number }>()
+  group.forEach((p, i) => {
+    if (hasPinnedLocal(p)) {
+      positions.set(p.id, { x: p.pos_x!, y: p.pos_y! })
+    } else {
+      const px = p.position_x
+      const py = p.position_y
+      if (
+        px != null &&
+        py != null &&
+        Number.isFinite(px) &&
+        Number.isFinite(py)
+      ) {
+        positions.set(p.id, { x: px, y: py })
+      } else {
+        positions.set(p.id, scatterPersonInGroup(i, group.length))
+      }
+    }
+  })
+  return positions
 }
 
 export function buildFlowElements(
@@ -66,6 +142,7 @@ export function buildFlowElements(
     peopleByLoc.set(lid, arr)
   }
 
+  const colorMap = options.communityColors ?? new Map<string, string>()
   const displayEdges = dedupeEdgesForGraph(edges)
   const internalEdges = displayEdges.map((e) => ({
     source: e.source_node_id,
@@ -73,6 +150,23 @@ export function buildFlowElements(
   }))
 
   const nameById = new Map(people.map((p) => [p.id, p.name]))
+
+  const selfId = options.selfNodeId ?? null
+  const relationFromSelf = new Map<string, string | null>()
+  if (selfId) {
+    for (const e of displayEdges) {
+      if (e.source_node_id === selfId && e.target_node_id !== selfId) {
+        relationFromSelf.set(e.target_node_id, e.relation_type)
+      } else if (e.target_node_id === selfId && e.source_node_id !== selfId) {
+        relationFromSelf.set(e.source_node_id, e.relation_type)
+      }
+    }
+  }
+
+  const relationBorderForPerson = (p: DbPerson) => {
+    if (p.is_self || !selfId) return relationTypeToBorderColor(null)
+    return relationTypeToBorderColor(relationFromSelf.get(p.id))
+  }
 
   const personNodes: Node[] = []
 
@@ -84,42 +178,11 @@ export function buildFlowElements(
       return a && b
     })
 
-    let positions: Map<string, { x: number; y: number }>
-    const needsForce = Boolean(
-      options.runForceLayout &&
-        group.some(
-          (p) =>
-            p.position_x == null ||
-            p.position_y == null ||
-            !Number.isFinite(p.position_x) ||
-            !Number.isFinite(p.position_y)
-        )
+    const positions = buildPositionsForGroup(
+      group,
+      locInternal,
+      options.runForceLayout
     )
-
-    if (needsForce && group.length > 0) {
-      positions = layoutPersonNodesInCluster(
-        group.map((p) => p.id),
-        locInternal,
-        CONSTELLATION_WIDTH,
-        CONSTELLATION_HEIGHT
-      )
-    } else {
-      positions = new Map()
-      group.forEach((p, i) => {
-        const px = p.position_x
-        const py = p.position_y
-        if (
-          px != null &&
-          py != null &&
-          Number.isFinite(px) &&
-          Number.isFinite(py)
-        ) {
-          positions.set(p.id, { x: px, y: py })
-        } else {
-          positions.set(p.id, scatterPersonInGroup(i, group.length))
-        }
-      })
-    }
 
     for (const p of group) {
       const pos = positions.get(p.id) ?? {
@@ -138,6 +201,7 @@ export function buildFlowElements(
           avatarUrl: p.avatar_url ?? null,
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
+          relationBorderHex: relationBorderForPerson(p),
         },
         style: { zIndex: 2 },
       })
@@ -157,13 +221,21 @@ export function buildFlowElements(
       draggable: false,
       style: { zIndex: 0 },
     })
-    orphanGroup.forEach((p, i) => {
-      const px = p.position_x
-      const py = p.position_y
-      const position =
-        px != null && py != null && Number.isFinite(px) && Number.isFinite(py)
-          ? { x: px, y: py }
-          : scatterPersonInGroup(i, orphanGroup.length)
+    const orphanInternal = internalEdges.filter((e) => {
+      const a = orphanGroup.some((p) => p.id === e.source)
+      const b = orphanGroup.some((p) => p.id === e.target)
+      return a && b
+    })
+    const orphanPositions = buildPositionsForGroup(
+      orphanGroup,
+      orphanInternal,
+      options.runForceLayout
+    )
+    for (const p of orphanGroup) {
+      const position = orphanPositions.get(p.id) ?? {
+        x: CONSTELLATION_WIDTH / 2,
+        y: CONSTELLATION_HEIGHT / 2,
+      }
       personNodes.push({
         id: p.id,
         type: 'person',
@@ -176,10 +248,11 @@ export function buildFlowElements(
           avatarUrl: p.avatar_url ?? null,
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
+          relationBorderHex: relationBorderForPerson(p),
         },
         style: { zIndex: 2 },
       })
-    })
+    }
   }
 
   const rfEdges: Edge[] = displayEdges.map((e) => {
@@ -190,7 +263,12 @@ export function buildFlowElements(
     )
     const displayName = `${sortedNames[0]} · ${sortedNames[1]}`
     const relationshipLabel = e.label
-  
+    const cid = e.community_id
+    const baseStroke = cid
+      ? colorMap.get(cid) ?? DEFAULT_EDGE_NEUTRAL
+      : DEFAULT_EDGE_NEUTRAL
+    const communityKey = cid ?? NO_COMMUNITY_KEY
+
     return {
       id: e.id,
       source: e.source_node_id,
@@ -200,8 +278,10 @@ export function buildFlowElements(
         displayName,
         relationshipLabel,
         tooltip: `${displayName} — ${relationshipLabel}`,
+        baseStroke,
+        communityKey,
       },
-      style: { strokeWidth: 2 },
+      style: { stroke: baseStroke, strokeWidth: 2, opacity: 1 },
       zIndex: 1,
     }
   })

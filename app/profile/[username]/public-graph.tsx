@@ -28,6 +28,8 @@ export type PublicGraphPayload = {
   locations: DbLocation[]
   people: DbPerson[]
   edges: DbEdge[]
+  /** Community id → hex stroke color */
+  communityColors?: Record<string, string>
 }
 
 export function PublicProfileGraph({ graphData }: { graphData: PublicGraphPayload }) {
@@ -39,23 +41,50 @@ export function PublicProfileGraph({ graphData }: { graphData: PublicGraphPayloa
 }
 
 function PublicGraphInner({ graphData }: { graphData: PublicGraphPayload }) {
+  const selfNodeId = useMemo(
+    () => graphData.people.find((p) => p.is_self)?.id ?? null,
+    [graphData.people]
+  )
+
   const needsForceLayout = useMemo(
     () =>
-      graphData.people.some(
-        (p) =>
+      graphData.people.some((p) => {
+        if (
+          p.pos_x != null &&
+          p.pos_y != null &&
+          Number.isFinite(p.pos_x) &&
+          Number.isFinite(p.pos_y)
+        ) {
+          return false
+        }
+        return (
           p.position_x == null ||
           p.position_y == null ||
           !Number.isFinite(Number(p.position_x)) ||
           !Number.isFinite(Number(p.position_y))
-      ),
+        )
+      }),
     [graphData.people]
   )
+
+  const communityColorMap = useMemo(() => {
+    const m = new Map<string, string>()
+    const rec = graphData.communityColors
+    if (rec) {
+      for (const [id, hex] of Object.entries(rec)) m.set(id, hex)
+    }
+    return m
+  }, [graphData.communityColors])
 
   const { nodes: initialNodes, edges: initialEdges } = buildFlowElements(
     graphData.locations,
     graphData.people,
     graphData.edges,
-    { runForceLayout: needsForceLayout, shiftConnect: false }
+    {
+      runForceLayout: needsForceLayout,
+      shiftConnect: false,
+      communityColors: communityColorMap,
+    }
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -66,7 +95,12 @@ function PublicGraphInner({ graphData }: { graphData: PublicGraphPayload }) {
       graphData.locations,
       graphData.people,
       graphData.edges,
-      { runForceLayout: needsForceLayout, shiftConnect: false }
+      {
+        runForceLayout: needsForceLayout,
+        shiftConnect: false,
+        communityColors: communityColorMap,
+        selfNodeId,
+      }
     )
     setNodes(n)
     setEdges(e)
@@ -74,7 +108,9 @@ function PublicGraphInner({ graphData }: { graphData: PublicGraphPayload }) {
     graphData.locations,
     graphData.people,
     graphData.edges,
+    communityColorMap,
     needsForceLayout,
+    selfNodeId,
     setNodes,
     setEdges,
   ])
