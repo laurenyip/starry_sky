@@ -3,13 +3,7 @@ import { NO_COMMUNITY_KEY } from '@/lib/edge-highlight'
 import { dedupeEdgesForGraph } from '@/lib/edge-helpers'
 import { layoutPersonNodesInCluster } from '@/lib/force-layout-cluster'
 import { relationTypeToBorderColor } from '@/lib/relation-type-colors'
-import {
-  CONSTELLATION_HEIGHT,
-  CONSTELLATION_NODE_ID,
-  CONSTELLATION_WIDTH,
-  constellationGroupPosition,
-  scatterPersonInGroup,
-} from '@/lib/graph-model'
+import { scatterPersonInGroup } from '@/lib/graph-model'
 
 export type DbLocation = { id: string; name: string; user_id?: string }
 export type DbPerson = {
@@ -26,6 +20,7 @@ export type DbPerson = {
   pos_y: number | null
   avatar_url: string | null
   is_self: boolean
+  created_at?: string | null
 }
 export type DbEdge = {
   id: string
@@ -78,7 +73,8 @@ function hasSavedLayout(p: DbPerson): boolean {
 function buildPositionsForGroup(
   group: DbPerson[],
   locInternal: { source: string; target: string }[],
-  runForceLayout: boolean | undefined
+  runForceLayout: boolean | undefined,
+  anchor: { x: number; y: number }
 ): Map<string, { x: number; y: number }> {
   const pinnedLocal = new Map<string, { x: number; y: number }>()
   for (const p of group) {
@@ -90,13 +86,18 @@ function buildPositionsForGroup(
       group.some((p) => !hasPinnedLocal(p) && !hasSavedLayout(p))
   )
   if (needsForce && group.length > 0) {
-    return layoutPersonNodesInCluster(
+    const clustered = layoutPersonNodesInCluster(
       group.map((q) => q.id),
       locInternal,
-      CONSTELLATION_WIDTH,
-      CONSTELLATION_HEIGHT,
+      420,
+      320,
       pinnedLocal
     )
+    const moved = new Map<string, { x: number; y: number }>()
+    for (const [id, pos] of clustered.entries()) {
+      moved.set(id, { x: pos.x + anchor.x, y: pos.y + anchor.y })
+    }
+    return moved
   }
   const positions = new Map<string, { x: number; y: number }>()
   group.forEach((p, i) => {
@@ -113,7 +114,11 @@ function buildPositionsForGroup(
       ) {
         positions.set(p.id, { x: px, y: py })
       } else {
-        positions.set(p.id, scatterPersonInGroup(i, group.length))
+        const rel = scatterPersonInGroup(i, group.length, 240, 220)
+        positions.set(p.id, {
+          x: anchor.x + rel.x - 120,
+          y: anchor.y + rel.y - 110,
+        })
       }
     }
   })
@@ -129,19 +134,6 @@ export function buildFlowElements(
   const sortedLocs = [...locations].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
   )
-
-  const constellationNodes: Node[] = sortedLocs.map((loc, index) => {
-    const pos = constellationGroupPosition(index)
-    return {
-      id: CONSTELLATION_NODE_ID(loc.id),
-      type: 'constellation',
-      position: pos,
-      data: { label: loc.name, locationId: loc.id },
-      selectable: false,
-      draggable: false,
-      style: { zIndex: 0 },
-    }
-  })
 
   const peopleByLoc = new Map<string, DbPerson[]>()
   for (const p of people) {
@@ -178,6 +170,12 @@ export function buildFlowElements(
   }
 
   const personNodes: Node[] = []
+  const anchors = new Map<string, { x: number; y: number }>()
+  const radius = 250
+  sortedLocs.forEach((loc, idx) => {
+    const angle = (idx / Math.max(1, sortedLocs.length)) * Math.PI * 2
+    anchors.set(loc.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius })
+  })
 
   for (const loc of sortedLocs) {
     const group = peopleByLoc.get(loc.id) ?? []
@@ -190,25 +188,21 @@ export function buildFlowElements(
     const positions = buildPositionsForGroup(
       group,
       locInternal,
-      options.runForceLayout
+      options.runForceLayout,
+      anchors.get(loc.id) ?? { x: 0, y: 0 }
     )
 
     for (const p of group) {
       const fallback = p.is_self
-        ? {
-            x: CONSTELLATION_WIDTH / 2 - SELF_NODE_SIZE / 2,
-            y: CONSTELLATION_HEIGHT / 2 - SELF_NODE_SIZE / 2,
-          }
+        ? { x: -SELF_NODE_SIZE / 2, y: -SELF_NODE_SIZE / 2 }
         : {
-            x: CONSTELLATION_WIDTH / 2 - NORMAL_NODE_SIZE / 2,
-            y: CONSTELLATION_HEIGHT / 2 - NORMAL_NODE_SIZE / 2,
+            x: (anchors.get(loc.id)?.x ?? 0) - NORMAL_NODE_SIZE / 2,
+            y: (anchors.get(loc.id)?.y ?? 0) - NORMAL_NODE_SIZE / 2,
           }
       const pos = p.is_self ? fallback : positions.get(p.id) ?? fallback
       personNodes.push({
         id: p.id,
         type: 'person',
-        parentId: CONSTELLATION_NODE_ID(loc.id),
-        extent: 'parent',
         position: pos,
         data: {
           name: p.name,
@@ -227,17 +221,7 @@ export function buildFlowElements(
 
   const orphanGroup = peopleByLoc.get('_none') ?? []
   if (orphanGroup.length > 0) {
-    const orphanLocId = 'unplaced'
-    const pos = constellationGroupPosition(sortedLocs.length)
-    constellationNodes.push({
-      id: CONSTELLATION_NODE_ID(orphanLocId),
-      type: 'constellation',
-      position: pos,
-      data: { label: 'Unplaced', locationId: null as unknown as string },
-      selectable: false,
-      draggable: false,
-      style: { zIndex: 0 },
-    })
+    const orphanAnchor = { x: 0, y: 0 }
     const orphanInternal = internalEdges.filter((e) => {
       const a = orphanGroup.some((p) => p.id === e.source)
       const b = orphanGroup.some((p) => p.id === e.target)
@@ -246,24 +230,20 @@ export function buildFlowElements(
     const orphanPositions = buildPositionsForGroup(
       orphanGroup,
       orphanInternal,
-      options.runForceLayout
+      options.runForceLayout,
+      orphanAnchor
     )
     for (const p of orphanGroup) {
       const fallback = p.is_self
-        ? {
-            x: CONSTELLATION_WIDTH / 2 - SELF_NODE_SIZE / 2,
-            y: CONSTELLATION_HEIGHT / 2 - SELF_NODE_SIZE / 2,
-          }
+        ? { x: -SELF_NODE_SIZE / 2, y: -SELF_NODE_SIZE / 2 }
         : {
-            x: CONSTELLATION_WIDTH / 2 - NORMAL_NODE_SIZE / 2,
-            y: CONSTELLATION_HEIGHT / 2 - NORMAL_NODE_SIZE / 2,
+            x: orphanAnchor.x - NORMAL_NODE_SIZE / 2,
+            y: orphanAnchor.y - NORMAL_NODE_SIZE / 2,
           }
       const position = p.is_self ? fallback : orphanPositions.get(p.id) ?? fallback
       personNodes.push({
         id: p.id,
         type: 'person',
-        parentId: CONSTELLATION_NODE_ID(orphanLocId),
-        extent: 'parent',
         position,
         data: {
           name: p.name,
@@ -309,7 +289,7 @@ export function buildFlowElements(
     }
   })
 
-  return { nodes: [...constellationNodes, ...personNodes], edges: rfEdges }
+  return { nodes: personNodes, edges: rfEdges }
 }
 
 /** Resolve which saved location (if any) matches a synthetic unplaced group */

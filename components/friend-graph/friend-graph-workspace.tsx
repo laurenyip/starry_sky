@@ -3,7 +3,6 @@
 import { useToast } from '@/components/toast-provider'
 import { CommunityConnectOverlay } from '@/components/friend-graph/community-connect-overlay'
 import { CommunitiesLegend } from '@/components/friend-graph/communities-legend'
-import { ConstellationNode } from '@/components/friend-graph/constellation-node'
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
 import { PersonNode } from '@/components/friend-graph/person-node'
 import {
@@ -25,9 +24,6 @@ import {
 } from '@/lib/flow-build'
 import { formatRelativeTime } from '@/lib/format-relative-time'
 import {
-  CONSTELLATION_HEIGHT,
-  CONSTELLATION_NODE_ID,
-  CONSTELLATION_WIDTH,
   customAttributesToRows,
   parseCustomAttributes,
   RELATIONSHIP_VALUES,
@@ -63,7 +59,7 @@ import {
   useState,
 } from 'react'
 
-const nodeTypes = { constellation: ConstellationNode, person: PersonNode }
+const nodeTypes = { person: PersonNode }
 const edgeTypes = { labeled: LabeledEdge }
 
 type PendingConn = { source: string; target: string }
@@ -149,53 +145,6 @@ function useShiftHeld() {
     }
   }, [])
   return shift
-}
-
-function constellationHit(
-  centerAbs: { x: number; y: number },
-  constNodes: Node[]
-): { id: string; locationId: string | null } | null {
-  let best: { id: string; locationId: string | null; d: number } | null = null
-  for (const cn of constNodes) {
-    if (cn.type !== 'constellation') continue
-    const x0 = cn.position.x
-    const y0 = cn.position.y
-    const inside =
-      centerAbs.x >= x0 &&
-      centerAbs.x <= x0 + CONSTELLATION_WIDTH &&
-      centerAbs.y >= y0 &&
-      centerAbs.y <= y0 + CONSTELLATION_HEIGHT
-    if (!inside) continue
-    const cx = x0 + CONSTELLATION_WIDTH / 2
-    const cy = y0 + CONSTELLATION_HEIGHT / 2
-    const d =
-      (centerAbs.x - cx) * (centerAbs.x - cx) +
-      (centerAbs.y - cy) * (centerAbs.y - cy)
-    if (!best || d < best.d) {
-      best = {
-        id: cn.id,
-        locationId: (cn.data?.locationId as string | null) ?? null,
-        d,
-      }
-    }
-  }
-  return best ? { id: best.id, locationId: best.locationId } : null
-}
-
-function personAbsoluteCenter(node: Node, allNodes: Node[]): { x: number; y: number } | null {
-  let x = node.position.x
-  let y = node.position.y
-  let cur: Node | undefined = node
-  const seen = new Set<string>()
-  while (cur?.parentId && !seen.has(cur.id)) {
-    seen.add(cur.id)
-    const p = allNodes.find((n) => n.id === cur!.parentId)
-    if (!p) break
-    x += p.position.x
-    y += p.position.y
-    cur = p
-  }
-  return { x: x + 26, y: y + 26 }
 }
 
 export function FriendGraphWorkspace(props: {
@@ -389,6 +338,11 @@ function FriendGraphInner({
     x: number
     y: number
   } | null>(null)
+  const [locationLineTooltip, setLocationLineTooltip] = useState<{
+    x: number
+    y: number
+    label: string
+  } | null>(null)
 
   const [addPersonOpen, setAddPersonOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -402,6 +356,7 @@ function FriendGraphInner({
   const [submitErr, setSubmitErr] = useState<string | null>(null)
 
   const [panelLocId, setPanelLocId] = useState('')
+  const [panelLocName, setPanelLocName] = useState('')
   const [panelNotes, setPanelNotes] = useState('')
   const [panelRows, setPanelRows] = useState<{ key: string; value: string }[]>(
     [{ key: '', value: '' }]
@@ -555,6 +510,34 @@ function FriendGraphInner({
     return pairs
   }, [selectedCommunityId, nodeCommunities])
 
+  const locationOverlayPairs = useMemo(() => {
+    const groups = new Map<string, DbPerson[]>()
+    for (const p of people) {
+      const locName = locations.find((l) => l.id === p.location_id)?.name ?? ''
+      const key = locName.trim().toLowerCase()
+      if (!key) continue
+      const arr = groups.get(key) ?? []
+      arr.push(p)
+      groups.set(key, arr)
+    }
+    const pairs: { source: string; target: string; label: string }[] = []
+    for (const [key, members] of groups.entries()) {
+      if (members.length < 2) continue
+      const sorted = [...members].sort((a, b) => {
+        const at = a.created_at ? Date.parse(a.created_at) : Number.MAX_SAFE_INTEGER
+        const bt = b.created_at ? Date.parse(b.created_at) : Number.MAX_SAFE_INTEGER
+        return at - bt || a.id.localeCompare(b.id)
+      })
+      const label = sorted[0]?.location_id
+        ? locations.find((l) => l.id === sorted[0].location_id)?.name ?? key
+        : key
+      for (let i = 0; i < sorted.length - 1; i++) {
+        pairs.push({ source: sorted[i].id, target: sorted[i + 1].id, label })
+      }
+    }
+    return pairs
+  }, [people, locations])
+
   const memberSetForCommunity = useMemo(() => {
     if (!selectedCommunityId) return null
     if (selectedCommunityId === NO_COMMUNITY_KEY) {
@@ -622,8 +605,6 @@ function FriendGraphInner({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nodesForFlow)
   const [edges, setEdges, onEdgesChange] = useEdgesState(styledEdges)
-  const nodesRef = useRef<Node[]>(nodes)
-  nodesRef.current = nodes
 
   const patchPersonAvatar = useCallback(
     (personId: string, url: string | null) => {
@@ -690,7 +671,7 @@ function FriendGraphInner({
       supabase
         .from('nodes')
         .select(
-          'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self'
+          'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self,created_at'
         )
         .eq('owner_id', userId),
       supabase
@@ -757,7 +738,7 @@ function FriendGraphInner({
         const again = await supabase
           .from('nodes')
           .select(
-            'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self'
+            'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self,created_at'
           )
           .eq('owner_id', userId)
         rawPeople = (again.data ?? []) as Record<string, unknown>[]
@@ -779,6 +760,7 @@ function FriendGraphInner({
       pos_y: r.pos_y == null ? null : Number(r.pos_y as number),
       avatar_url: r.avatar_url ? String(r.avatar_url) : null,
       is_self: Boolean(r.is_self),
+      created_at: r.created_at ? String(r.created_at) : null,
     }))
     setPeople(peopleList)
     setDbEdges(
@@ -880,6 +862,7 @@ function FriendGraphInner({
   useEffect(() => {
     if (!selectedPerson) {
       setPanelLocId('')
+      setPanelLocName('')
       setPanelNotes('')
       setPanelRows([{ key: '', value: '' }])
       setPanelRelationToUser('other')
@@ -889,6 +872,9 @@ function FriendGraphInner({
     }
     setPanelName(selectedPerson.name)
     setPanelLocId(selectedPerson.location_id ?? '')
+    setPanelLocName(
+      locations.find((l) => l.id === selectedPerson.location_id)?.name ?? ''
+    )
     setPanelNotes(selectedPerson.things_to_remember)
     setPanelRows(
       customAttributesToRows(parseCustomAttributes(selectedPerson.custom_attributes))
@@ -899,7 +885,7 @@ function FriendGraphInner({
       setPanelRelationToUser('other')
       setPanelRelationNote('')
     }
-  }, [selectedPerson])
+  }, [selectedPerson, locations])
 
   useEffect(() => {
     if (!selectedPerson || selectedPerson.is_self) return
@@ -1681,46 +1667,8 @@ function FriendGraphInner({
       if (selfNodeId && node.id === selfNodeId) return
       const { x, y } = node.position
       schedulePersistPinnedPosition(node.id, x, y)
-
-      const fresh = nodesRef.current
-      const consts = fresh.filter((n) => n.type === 'constellation')
-      const center = personAbsoluteCenter(node, fresh)
-      if (!center) return
-      const hit = constellationHit(center, consts)
-      if (!hit || hit.locationId == null) return
-
-      const currentLoc = people.find((p) => p.id === node.id)?.location_id
-      if (hit.id === CONSTELLATION_NODE_ID('unplaced')) return
-
-      if (currentLoc === hit.locationId) return
-
-      if (pinSaveTimer.current) {
-        clearTimeout(pinSaveTimer.current)
-        pinSaveTimer.current = null
-      }
-
-      const group = people.filter(
-        (p) => p.location_id === hit.locationId && p.id !== node.id
-      )
-      const pos = scatterPersonInGroup(group.length, group.length + 1)
-
-      void (async () => {
-        const { error: uerr } = await supabase
-          .from('nodes')
-          .update({
-            location_id: hit.locationId,
-            position_x: pos.x,
-            position_y: pos.y,
-            pos_x: null,
-            pos_y: null,
-          })
-          .eq('id', node.id)
-          .eq('owner_id', userId)
-        if (uerr) setError(uerr.message)
-        await loadData()
-      })()
     },
-    [people, selfNodeId, schedulePersistPinnedPosition, supabase, userId, loadData]
+    [selfNodeId, schedulePersistPinnedPosition]
   )
 
   useEffect(() => {
@@ -1781,6 +1729,7 @@ function FriendGraphInner({
         elementsSelectable
         onNodeClick={(_, n) => {
           setNodeContextMenu(null)
+          setLocationLineTooltip(null)
           if (assignCommunityId && n.type === 'person') {
             void toggleNodeCommunityMembership(n.id, assignCommunityId)
             return
@@ -1796,6 +1745,7 @@ function FriendGraphInner({
         }}
         onPaneClick={() => {
           setNodeContextMenu(null)
+          setLocationLineTooltip(null)
           setSelectedCommunityId(null)
           setGraphHighlight({ kind: 'none' })
           setSelectedPerson(null)
@@ -1804,6 +1754,7 @@ function FriendGraphInner({
         }}
         onEdgeClick={(_, e) => {
           setNodeContextMenu(null)
+          setLocationLineTooltip(null)
           setSelectedPerson(null)
           setEdges((eds) =>
             eds.map((edge) => ({ ...edge, selected: edge.id === e.id }))
@@ -1835,6 +1786,22 @@ function FriendGraphInner({
         }`}
       >
         <Background gap={22} size={1.2} />
+        {locationOverlayPairs.length > 0 ? (
+          <CommunityConnectOverlay
+            pairs={locationOverlayPairs}
+            stroke="#CBD5E1"
+            strokeWidth={0.4}
+            strokeOpacity={0.35}
+            strokeDasharray="4 6"
+            zIndex={2}
+            interactive
+            onLineClick={({ pairIndex, x, y }) => {
+              const p = locationOverlayPairs[pairIndex]
+              if (!p) return
+              setLocationLineTooltip({ x, y, label: p.label })
+            }}
+          />
+        ) : null}
         {selectedCommunityId && communityOverlayPairs.length > 0 ? (
           <CommunityConnectOverlay
             pairs={communityOverlayPairs}
@@ -1930,6 +1897,21 @@ function FriendGraphInner({
                 )
               })}
             </div>
+          </div>
+        </>
+      ) : null}
+      {locationLineTooltip ? (
+        <>
+          <div
+            className="fixed inset-0 z-30"
+            onClick={() => setLocationLineTooltip(null)}
+            aria-hidden
+          />
+          <div
+            className="fixed z-40 rounded-md border border-zinc-200 bg-background px-2 py-1 text-xs text-zinc-700 shadow dark:border-zinc-700 dark:text-zinc-300"
+            style={{ left: locationLineTooltip.x + 8, top: locationLineTooltip.y + 8 }}
+          >
+            {locationLineTooltip.label}
           </div>
         </>
       ) : null}
@@ -2476,39 +2458,43 @@ function FriendGraphInner({
           <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">
             <div>
               <label className="text-xs uppercase tracking-wide text-gray-400">Location</label>
-              <select
-                value={panelLocId}
-                onChange={(e) => {
-                  const nextLocId = e.target.value
-                  setPanelLocId(nextLocId)
-                  const prevLocId = selectedPerson.location_id ?? ''
-                  if (nextLocId === prevLocId) return
-                  let pos: { x: number; y: number } | undefined
-                  if (nextLocId) {
-                    const group = people.filter(
-                      (p) => p.location_id === nextLocId && p.id !== selectedPerson.id
+              <input
+                value={panelLocName}
+                onChange={(e) => setPanelLocName(e.target.value)}
+                onBlur={() => {
+                  const nextName = panelLocName.trim()
+                  const prevName =
+                    locations.find((l) => l.id === selectedPerson.location_id)?.name ?? ''
+                  if (nextName === prevName.trim()) return
+                  void (async () => {
+                    if (!nextName) {
+                      setPanelLocId('')
+                      await saveNodePatch(selectedPerson.id, {
+                        location_id: null,
+                        pos_x: null,
+                        pos_y: null,
+                      })
+                      return
+                    }
+                    const existing = locations.find(
+                      (l) => l.name.trim().toLowerCase() === nextName.toLowerCase()
                     )
-                    pos = scatterPersonInGroup(group.length, group.length + 1)
-                  } else {
-                    pos = scatterPersonInGroup(0, 1)
-                  }
-                  void saveNodePatch(selectedPerson.id, {
-                    location_id: nextLocId || null,
-                    position_x: pos.x,
-                    position_y: pos.y,
-                    pos_x: null,
-                    pos_y: null,
-                  })
+                    let locId = existing?.id ?? null
+                    if (!locId) {
+                      locId = await addLocation(nextName)
+                    }
+                    if (!locId) return
+                    setPanelLocId(locId)
+                    await saveNodePatch(selectedPerson.id, {
+                      location_id: locId,
+                      pos_x: null,
+                      pos_y: null,
+                    })
+                  })()
                 }}
+                placeholder="e.g. Vancouver"
                 className="mt-1 w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
-              >
-                <option value="">None</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             {!selectedPerson.is_self ? (
               <div>

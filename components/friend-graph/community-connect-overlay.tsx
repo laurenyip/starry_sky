@@ -6,15 +6,30 @@ import { useMemo } from 'react'
 export type CommunityOverlayPair = { source: string; target: string }
 
 type Props = {
-  /** All unordered member pairs (client-only overlay; not in DB). */
+  /** Chain pairs for overlay lines (client-only; not in DB). */
   pairs: CommunityOverlayPair[]
   stroke: string
+  strokeWidth?: number
+  strokeOpacity?: number
+  strokeDasharray?: string
+  zIndex?: number
+  interactive?: boolean
+  onLineClick?: (args: { pairIndex: number; x: number; y: number }) => void
 }
 
 /**
  * Dashed constellation chain between selected community members (ViewportPortal coords).
  */
-export function CommunityConnectOverlay({ pairs, stroke }: Props) {
+export function CommunityConnectOverlay({
+  pairs,
+  stroke,
+  strokeWidth = 1,
+  strokeOpacity = 0.6,
+  strokeDasharray = '6 4',
+  zIndex = 4,
+  interactive = false,
+  onLineClick,
+}: Props) {
   const lineSignature = useStore((s) => {
     const ids = new Set<string>()
     for (const p of pairs) {
@@ -85,7 +100,7 @@ export function CommunityConnectOverlay({ pairs, stroke }: Props) {
   return (
     <ViewportPortal>
       <svg
-        className="pointer-events-none"
+        className={interactive ? '' : 'pointer-events-none'}
         style={{
           position: 'absolute',
           left: layout.minX,
@@ -93,7 +108,7 @@ export function CommunityConnectOverlay({ pairs, stroke }: Props) {
           width: layout.width,
           height: layout.height,
           overflow: 'visible',
-          zIndex: 4,
+          zIndex,
         }}
         width={layout.width}
         height={layout.height}
@@ -106,10 +121,21 @@ export function CommunityConnectOverlay({ pairs, stroke }: Props) {
             x2={ln.x2}
             y2={ln.y2}
             stroke={stroke}
-            strokeWidth={1}
-            strokeOpacity={0.6}
-            strokeDasharray="6 4"
+            strokeWidth={strokeWidth}
+            strokeOpacity={strokeOpacity}
+            strokeDasharray={strokeDasharray}
             strokeLinecap="round"
+            style={interactive ? { pointerEvents: 'stroke', cursor: 'pointer' } : undefined}
+            onClick={
+              interactive && onLineClick
+                ? (ev) =>
+                    onLineClick({
+                      pairIndex: i,
+                      x: ev.clientX,
+                      y: ev.clientY,
+                    })
+                : undefined
+            }
           />
         ))}
       </svg>
