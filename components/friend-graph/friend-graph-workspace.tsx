@@ -159,14 +159,90 @@ export function FriendGraphWorkspace(props: {
 }
 
 const NODE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
-const RELATION_TO_YOU_OPTIONS = [
-  'friend',
-  'family',
-  'acquaintance',
-  'colleague',
-  'mentor',
-  'other',
+const RELATION_TYPES = [
+  'Friend',
+  'Close Friend',
+  'Ex-Friend',
+  'Family',
+  'Partner',
+  'Ex-Partner',
+  'Colleague',
+  'Mentor',
+  'Mentee',
+  'Acquaintance',
+  'Neighbour',
+  'Classmate',
+  'Enemy',
+  'Other',
 ] as const
+function legacyTagToRelationTypeLegacyField(tag: string | null): string | null {
+  if (!tag) return null
+  return tag.trim().toLowerCase().replace(/\s+/g, '_')
+}
+
+function normalizeRelationTags(tags: string[]): string[] {
+  const allowed = new Set<string>(RELATION_TYPES as unknown as string[])
+  const cleaned = tags
+    .map((t) => String(t).trim())
+    .filter(Boolean)
+    .filter((t) => allowed.has(t))
+  const uniq = Array.from(new Set(cleaned))
+  const order = new Map<string, number>(
+    (RELATION_TYPES as unknown as string[]).map((t, i) => [t, i])
+  )
+  uniq.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999))
+  return uniq
+}
+
+function legacyRelationTypeToTags(rt: string | null | undefined): string[] {
+  const t = (rt ?? '').trim().toLowerCase()
+  if (!t) return []
+  if (t === 'friend') return ['Friend']
+  if (t === 'family') return ['Family']
+  if (t === 'partner') return ['Partner']
+  if (t === 'colleague') return ['Colleague']
+  if (t === 'mentor') return ['Mentor']
+  if (t === 'mentee') return ['Mentee']
+  if (t === 'acquaintance') return ['Acquaintance']
+  if (t === 'neighbour') return ['Neighbour']
+  if (t === 'classmate') return ['Classmate']
+  if (t === 'enemy') return ['Enemy']
+  if (t === 'other') return ['Other']
+  return ['Other']
+}
+
+function relationTagPillClass(tag: string): string {
+  const t = tag.trim()
+  const base = 'rounded-full px-2 py-0.5 text-[11px] font-medium border'
+  if (t === 'Friend' || t === 'Close Friend')
+    return `${base} border-yellow-200 bg-yellow-100 text-yellow-900 dark:border-yellow-900/50 dark:bg-yellow-900/20 dark:text-yellow-200`
+  if (t === 'Ex-Friend' || t === 'Ex-Partner')
+    return `${base} border-orange-200 bg-orange-100 text-orange-900 dark:border-orange-900/50 dark:bg-orange-900/20 dark:text-orange-200`
+  if (t === 'Family')
+    return `${base} border-red-200 bg-red-100 text-red-900 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-200`
+  if (t === 'Partner')
+    return `${base} border-pink-200 bg-pink-100 text-pink-900 dark:border-pink-900/50 dark:bg-pink-900/20 dark:text-pink-200`
+  if (t === 'Colleague' || t === 'Mentee')
+    return `${base} border-purple-200 bg-purple-100 text-purple-900 dark:border-purple-900/50 dark:bg-purple-900/20 dark:text-purple-200`
+  if (t === 'Mentor')
+    return `${base} border-green-200 bg-green-100 text-green-900 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-200`
+  if (t === 'Acquaintance')
+    return `${base} border-sky-200 bg-sky-100 text-sky-900 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200`
+  if (t === 'Neighbour' || t === 'Classmate')
+    return `${base} border-teal-200 bg-teal-100 text-teal-900 dark:border-teal-900/50 dark:bg-teal-900/20 dark:text-teal-200`
+  if (t === 'Enemy')
+    return `${base} border-rose-300 bg-rose-100 text-rose-950 dark:border-rose-900/50 dark:bg-rose-900/20 dark:text-rose-200`
+  return `${base} border-zinc-200 bg-zinc-100 text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200`
+}
+
+function relationTagPickerClass(selected: boolean): string {
+  return [
+    'rounded-full px-2 py-1 text-xs transition-colors',
+    selected
+      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+      : 'border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900',
+  ].join(' ')
+}
 
 function personDisplayInitial(name: string): string {
   const t = name.trim()
@@ -298,7 +374,6 @@ function FriendGraphInner({
   const [selectedPerson, setSelectedPerson] = useState<DbPerson | null>(null)
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null)
   const [pendingConn, setPendingConn] = useState<PendingConn | null>(null)
-  const [connEdgeRelationToUser, setConnEdgeRelationToUser] = useState('other')
 
   const [communities, setCommunities] = useState<
     { id: string; name: string; owner_id: string; color: string }[]
@@ -318,16 +393,18 @@ function FriendGraphInner({
   const [addConnectionOpen, setAddConnectionOpen] = useState(false)
   const [connectPersonAId, setConnectPersonAId] = useState('')
   const [connectPersonBId, setConnectPersonBId] = useState('')
+  const [connectRelationTags, setConnectRelationTags] = useState<string[]>([])
   const [connectCommunityId, setConnectCommunityId] = useState<string | null>(null)
   const [connectNote, setConnectNote] = useState('')
   const [connectErr, setConnectErr] = useState<string | null>(null)
   const [panelCommunityPicker, setPanelCommunityPicker] = useState('')
-  const [pendingCommunityId, setPendingCommunityId] = useState<string | null>(
-    null
-  )
-  const [connEdgeCommunityId, setConnEdgeCommunityId] = useState<string | null>(
-    null
-  )
+  const [pendingRelationTags, setPendingRelationTags] = useState<string[]>([])
+  const [pendingCommunityId, setPendingCommunityId] = useState<string | null>(null)
+  const [pendingLabelNote, setPendingLabelNote] = useState('')
+
+  const [selectedEdgeRelationTags, setSelectedEdgeRelationTags] = useState<string[]>([])
+  const [selectedEdgeCommunityId, setSelectedEdgeCommunityId] = useState<string | null>(null)
+  const [selectedEdgeLabel, setSelectedEdgeLabel] = useState('')
   const [newCommunityOpen, setNewCommunityOpen] = useState(false)
   const [newCommunityName, setNewCommunityName] = useState('')
   const [newCommunityColor, setNewCommunityColor] = useState('#FF6B6B')
@@ -370,7 +447,7 @@ function FriendGraphInner({
     'idle'
   )
   const [panelName, setPanelName] = useState('')
-  const [panelRelationToUser, setPanelRelationToUser] = useState('other')
+  const [panelRelationTags, setPanelRelationTags] = useState<string[]>([])
   const [panelRelationNote, setPanelRelationNote] = useState('')
   const [relationHistory, setRelationHistory] = useState<
     {
@@ -400,22 +477,23 @@ function FriendGraphInner({
     [people]
   )
 
-  const loadedRelationForPanel = useMemo(() => {
-    if (!selectedPerson || selectedPerson.is_self || !selfNodeId) return 'other'
+  const loadedRelationTagsForPanel = useMemo(() => {
+    if (!selectedPerson || selectedPerson.is_self || !selfNodeId) return [] as string[]
     const edgePair = dedupeEdgesForGraph(dbEdges).find(
       (e) =>
         pairKey(e.source_node_id, e.target_node_id) ===
         pairKey(selfNodeId, selectedPerson.id)
     )
-    return edgePair?.relation_type?.trim().toLowerCase() ?? 'other'
+    const tagsRaw = (edgePair as any)?.relation_types
+    if (Array.isArray(tagsRaw)) return normalizeRelationTags(tagsRaw as string[])
+    const legacy = legacyRelationTypeToTags(edgePair?.relation_type ?? null)
+    return normalizeRelationTags(legacy)
   }, [selectedPerson, selfNodeId, dbEdges])
 
-  const panelAvatarRingColor = useMemo(() => {
-    if (!selectedPerson || selectedPerson.is_self) {
-      return relationTypeToBorderColor('other')
-    }
-    return relationTypeToBorderColor(panelRelationToUser)
-  }, [selectedPerson, panelRelationToUser])
+  const loadedRelationTagsKey = useMemo(
+    () => loadedRelationTagsForPanel.join(', '),
+    [loadedRelationTagsForPanel]
+  )
 
   const selectedNodeCommunityIds = useMemo(
     () => (selectedPerson ? nodeCommunityMap.get(selectedPerson.id) ?? [] : []),
@@ -677,7 +755,7 @@ function FriendGraphInner({
       supabase
         .from('edges')
         .select(
-          'id,owner_id,source_node_id,target_node_id,label,community_id,relation_type,created_at'
+          'id,owner_id,source_node_id,target_node_id,label,community_id,relation_type,relation_types,created_at'
         )
         .eq('owner_id', userId),
       supabase
@@ -768,6 +846,7 @@ function FriendGraphInner({
         const row = e as Record<string, unknown>
         const cid = row.community_id
         const rt = row.relation_type
+        const rts = (row as any).relation_types
         const createdAt = row.created_at
         return {
           id: e.id as string,
@@ -780,6 +859,9 @@ function FriendGraphInner({
             rt == null || rt === ''
               ? null
               : String(rt).trim().toLowerCase(),
+          relation_types: Array.isArray(rts)
+            ? (rts as unknown[]).map((x) => String(x)).filter(Boolean)
+            : null,
           created_at:
             createdAt == null || createdAt === ''
               ? null
@@ -865,7 +947,7 @@ function FriendGraphInner({
       setPanelLocName('')
       setPanelNotes('')
       setPanelRows([{ key: '', value: '' }])
-      setPanelRelationToUser('other')
+      setPanelRelationTags([])
       setPanelRelationNote('')
       setPanelName('')
       return
@@ -882,15 +964,33 @@ function FriendGraphInner({
     setPanelErr(null)
     setPanelCommunityPicker('')
     if (selectedPerson.is_self) {
-      setPanelRelationToUser('other')
+      setPanelRelationTags([])
       setPanelRelationNote('')
     }
   }, [selectedPerson, locations])
 
   useEffect(() => {
+    if (!selectedEdge) {
+      setSelectedEdgeRelationTags([])
+      setSelectedEdgeCommunityId(null)
+      setSelectedEdgeLabel('')
+      return
+    }
+    const raw = dbEdges.find((d) => d.id === selectedEdge.id)
+    if (!raw) return
+    const tags =
+      Array.isArray((raw as any).relation_types) && (raw as any).relation_types?.length
+        ? normalizeRelationTags(((raw as any).relation_types as string[]) ?? [])
+        : []
+    setSelectedEdgeRelationTags(tags)
+    setSelectedEdgeCommunityId(normalizeCommunityId(raw.community_id))
+    setSelectedEdgeLabel(raw.label ?? '')
+  }, [selectedEdge, dbEdges])
+
+  useEffect(() => {
     if (!selectedPerson || selectedPerson.is_self) return
-    setPanelRelationToUser(loadedRelationForPanel)
-  }, [selectedPerson, selectedPerson?.is_self, loadedRelationForPanel])
+    setPanelRelationTags(loadedRelationTagsForPanel)
+  }, [selectedPerson, selectedPerson?.is_self, loadedRelationTagsForPanel])
 
   useEffect(() => {
     setPanelRelationNote('')
@@ -1082,24 +1182,42 @@ function FriendGraphInner({
     })
   }, [selectedPerson, saveNodePatch])
 
-  const saveRelationToUser = useCallback(
-    async (nextRelationRaw: string) => {
+  const saveRelationTagsToUser = useCallback(
+    async (nextTagsRaw: string[]) => {
       if (!selectedPerson || selectedPerson.is_self) return
       const selfRow = people.find((p) => p.is_self)
       const sid = selfRow?.id
       if (!sid) return
-      const canonical = dedupeEdgesForGraph(dbEdges)
-      const edgePair = canonical.find(
-        (e) =>
-          pairKey(e.source_node_id, e.target_node_id) === pairKey(sid, selectedPerson.id)
-      )
-      const prevNorm = edgePair?.relation_type?.trim().toLowerCase() ?? 'other'
-      const nextNorm = nextRelationRaw.trim().toLowerCase()
+
+      const nextTags = normalizeRelationTags(nextTagsRaw)
       const noteTrim = panelRelationNote.trim()
-      const shouldChangeRelation =
-        prevNorm !== nextNorm && (edgePair != null || nextNorm !== 'other')
-      if (!shouldChangeRelation) return
-      if (!edgePair) {
+
+      const aToB = dbEdges.find(
+        (e) => e.source_node_id === sid && e.target_node_id === selectedPerson.id
+      )
+      const bToA = dbEdges.find(
+        (e) => e.source_node_id === selectedPerson.id && e.target_node_id === sid
+      )
+      const prevFromEdge =
+        Array.isArray((aToB as any)?.relation_types) && (aToB as any).relation_types?.length
+          ? normalizeRelationTags(((aToB as any).relation_types as string[]) ?? [])
+          : legacyRelationTypeToTags(aToB?.relation_type ?? null)
+      const prevTags = normalizeRelationTags(prevFromEdge)
+
+      const prevKey = prevTags.join(', ')
+      const nextKey = nextTags.join(', ')
+      if (prevKey === nextKey) return
+
+      // Keep legacy single field populated for compatibility (first tag only).
+      const legacyTag = nextTags[0] ?? null
+      const legacyNorm =
+        legacyTag == null
+          ? null
+          : legacyTag.trim().toLowerCase().replace(/\s+/g, '_')
+
+      if (!aToB || !bToA) {
+        // Only create an edge pair when there's something to store.
+        if (nextTags.length === 0) return
         const { error: insE } = await supabase.from('edges').insert([
           {
             owner_id: userId,
@@ -1107,7 +1225,8 @@ function FriendGraphInner({
             target_node_id: selectedPerson.id,
             label: 'connected',
             community_id: null,
-            relation_type: nextNorm,
+            relation_type: legacyNorm,
+            relation_types: nextTags,
           },
           {
             owner_id: userId,
@@ -1115,7 +1234,8 @@ function FriendGraphInner({
             target_node_id: sid,
             label: 'connected',
             community_id: null,
-            relation_type: nextNorm,
+            relation_type: legacyNorm,
+            relation_types: nextTags,
           },
         ])
         if (insE) {
@@ -1123,36 +1243,34 @@ function FriendGraphInner({
           return
         }
       } else {
-        const a = edgePair.source_node_id
-        const b = edgePair.target_node_id
         const { error: e1 } = await supabase
           .from('edges')
-          .update({ relation_type: nextNorm })
+          .update({ relation_types: nextTags, relation_type: legacyNorm })
           .eq('owner_id', userId)
-          .eq('source_node_id', a)
-          .eq('target_node_id', b)
+          .eq('id', aToB.id)
         const { error: e2 } = await supabase
           .from('edges')
-          .update({ relation_type: nextNorm })
+          .update({ relation_types: nextTags, relation_type: legacyNorm })
           .eq('owner_id', userId)
-          .eq('source_node_id', b)
-          .eq('target_node_id', a)
+          .eq('id', bToA.id)
         if (e1 || e2) {
           markSaveFail((e1 ?? e2)?.message ?? 'Failed to save')
           return
         }
       }
+
       const { error: histE } = await supabase.from('relation_history').insert({
         owner_id: userId,
         node_id: selectedPerson.id,
-        previous_relation: edgePair?.relation_type ?? null,
-        new_relation: nextNorm,
+        previous_relation: prevKey.length ? prevKey : null,
+        new_relation: nextKey.length ? nextKey : '',
         note: noteTrim.length ? noteTrim : null,
       })
       if (histE) {
         markSaveFail(histE.message || 'Failed to save')
         return
       }
+
       setPanelRelationNote('')
       await refreshSelectedAfterAutosave(selectedPerson.id)
       markSaveSuccess()
@@ -1202,14 +1320,30 @@ function FriendGraphInner({
       return
     }
     setConnectErr(null)
-    const payload = {
-      owner_id: userId,
-      source_node_id: personAId,
-      target_node_id: personBId,
-      community_id: normalizeCommunityId(connectCommunityId),
-      label: connectNote.trim() || null,
-      relation_type: null,
-    }
+    const relation_types = normalizeRelationTags(connectRelationTags)
+    const legacy = legacyTagToRelationTypeLegacyField(relation_types[0] ?? null)
+    const cid = normalizeCommunityId(connectCommunityId)
+    const label = connectNote?.trim() || null
+    const payload = [
+      {
+        owner_id: userId,
+        source_node_id: personAId,
+        target_node_id: personBId,
+        relation_types,
+        relation_type: legacy,
+        community_id: cid,
+        label,
+      },
+      {
+        owner_id: userId,
+        source_node_id: personBId,
+        target_node_id: personAId,
+        relation_types,
+        relation_type: legacy,
+        community_id: cid,
+        label,
+      },
+    ]
     const { error: insErr } = await supabase.from('edges').insert(payload)
     if (insErr) {
       setConnectErr(insErr.message || 'Failed to add connection.')
@@ -1218,6 +1352,7 @@ function FriendGraphInner({
     setAddConnectionOpen(false)
     setConnectPersonAId('')
     setConnectPersonBId('')
+    setConnectRelationTags([])
     setConnectCommunityId(null)
     setConnectNote('')
     await loadData()
@@ -1225,6 +1360,7 @@ function FriendGraphInner({
   }, [
     connectPersonAId,
     connectPersonBId,
+    connectRelationTags,
     connectCommunityId,
     connectNote,
     dbEdges,
@@ -1528,84 +1664,66 @@ function FriendGraphInner({
       return
     }
     const cid = normalizeCommunityId(pendingCommunityId)
-    const involvesSelf =
-      selfNodeId != null &&
-      (pendingConn.source === selfNodeId || pendingConn.target === selfNodeId)
-    const relationType = involvesSelf
-      ? connEdgeRelationToUser.trim().toLowerCase()
-      : null
+    const relation_types = normalizeRelationTags(pendingRelationTags)
+    const legacy = legacyTagToRelationTypeLegacyField(relation_types[0] ?? null)
+    const label = pendingLabelNote?.trim() || null
     const { error: e } = await supabase.from('edges').insert([
       {
         owner_id: userId,
         source_node_id: pendingConn.source,
         target_node_id: pendingConn.target,
-        label: 'connected',
+        label,
         community_id: cid,
-        relation_type: relationType,
+        relation_type: legacy,
+        relation_types,
       },
       {
         owner_id: userId,
         source_node_id: pendingConn.target,
         target_node_id: pendingConn.source,
-        label: 'connected',
+        label,
         community_id: cid,
-        relation_type: relationType,
+        relation_type: legacy,
+        relation_types,
       },
     ])
     if (e) setError(e.message)
     setPendingConn(null)
     setPendingCommunityId(null)
+    setPendingRelationTags([])
+    setPendingLabelNote('')
     await loadData()
   }, [
     pendingConn,
     pendingCommunityId,
-    connEdgeRelationToUser,
-    selfNodeId,
+    pendingRelationTags,
+    pendingLabelNote,
     dbEdges,
     supabase,
     userId,
     loadData,
   ])
 
-  const saveEdgeLabel = useCallback(async (nextRelationToUser?: string) => {
-    if (!selectedEdge) return
-    const raw = dbEdges.find((d) => d.id === selectedEdge.id)
-    if (!raw) return
-    const a = raw.source_node_id
-    const b = raw.target_node_id
-    const cid = normalizeCommunityId(connEdgeCommunityId)
-    const involvesSelf =
-      selfNodeId != null && (a === selfNodeId || b === selfNodeId)
-    const relationType = involvesSelf
-      ? (nextRelationToUser ?? connEdgeRelationToUser).trim().toLowerCase()
-      : raw.relation_type
-    const { error: e1 } = await supabase
-      .from('edges')
-      .update({ community_id: cid, relation_type: relationType })
-      .eq('owner_id', userId)
-      .eq('source_node_id', a)
-      .eq('target_node_id', b)
-    const { error: e2 } = await supabase
-      .from('edges')
-      .update({ community_id: cid, relation_type: relationType })
-      .eq('owner_id', userId)
-      .eq('source_node_id', b)
-      .eq('target_node_id', a)
-    if (e1 || e2) setError((e1 ?? e2)?.message ?? 'Update failed')
-    setSelectedCommunityId(null)
-    setGraphHighlight({ kind: 'none' })
-    setSelectedEdge(null)
-    await loadData()
-  }, [
-    selectedEdge,
-    dbEdges,
-    supabase,
-    userId,
-    connEdgeRelationToUser,
-    connEdgeCommunityId,
-    selfNodeId,
-    loadData,
-  ])
+  const updateSelectedEdgePair = useCallback(
+    async (patch: { community_id?: string | null; label?: string | null; relation_types?: string[]; relation_type?: string | null }) => {
+      if (!selectedEdge) return
+      const raw = dbEdges.find((d) => d.id === selectedEdge.id)
+      if (!raw) return
+      const a = raw.source_node_id
+      const b = raw.target_node_id
+      const rev = dbEdges.find((d) => d.source_node_id === b && d.target_node_id === a)
+      const ids = [raw.id, rev?.id].filter(Boolean) as string[]
+      if (ids.length === 0) return
+      const { error: e } = await supabase
+        .from('edges')
+        .update(patch)
+        .eq('owner_id', userId)
+        .in('id', ids)
+      if (e) setError(e.message)
+      await loadData()
+    },
+    [selectedEdge, dbEdges, supabase, userId, loadData]
+  )
 
   const deleteEdge = useCallback(async () => {
     if (!selectedEdge) return
@@ -1656,8 +1774,9 @@ function FriendGraphInner({
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target) return
     if (c.source === c.target) return
-    setConnEdgeRelationToUser('other')
     setPendingCommunityId(null)
+    setPendingRelationTags([])
+    setPendingLabelNote('')
     setPendingConn({ source: c.source, target: c.target })
   }, [])
 
@@ -1760,9 +1879,6 @@ function FriendGraphInner({
             eds.map((edge) => ({ ...edge, selected: edge.id === e.id }))
           )
           setSelectedEdge(e)
-          const raw = dbEdges.find((d) => d.id === e.id)
-          setConnEdgeRelationToUser(raw?.relation_type ?? 'other')
-          setConnEdgeCommunityId(normalizeCommunityId(raw?.community_id ?? null))
           const d = e.data as { communityKey?: string }
           const key = normalizeCommunityId(d?.communityKey ?? null) ?? NO_COMMUNITY_KEY
           setSelectedCommunityId(key)
@@ -1834,7 +1950,6 @@ function FriendGraphInner({
             setGraphHighlight({ kind: 'none' })
             setSelectedPerson(null)
             setSelectedEdge(null)
-            setConnEdgeCommunityId(null)
             setEdges((eds) =>
               eds.map((edge) => ({ ...edge, selected: false }))
             )
@@ -1844,7 +1959,6 @@ function FriendGraphInner({
           setGraphHighlight({ kind: 'none' })
           setSelectedPerson(null)
           setSelectedEdge(null)
-          setConnEdgeCommunityId(null)
           setEdges((eds) =>
             eds.map((edge) => ({ ...edge, selected: false }))
           )
@@ -1941,6 +2055,7 @@ function FriendGraphInner({
             const b = people.find((p) => p.id !== a)?.id ?? ''
             setConnectPersonAId(a)
             setConnectPersonBId(b)
+                setConnectRelationTags([])
             setConnectCommunityId(null)
             setConnectNote('')
             setAddConnectionOpen(true)
@@ -2127,6 +2242,27 @@ function FriendGraphInner({
                   </option>
                 ))}
             </select>
+            <label className="mt-3 block text-sm font-medium">Relationship types (optional)</label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(RELATION_TYPES as unknown as string[]).map((tag) => {
+                const selected = connectRelationTags.includes(tag)
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    className={relationTagPickerClass(selected)}
+                    onClick={() => {
+                      const next = selected
+                        ? connectRelationTags.filter((t) => t !== tag)
+                        : [...connectRelationTags, tag]
+                      setConnectRelationTags(normalizeRelationTags(next))
+                    }}
+                  >
+                    {tag}
+                  </button>
+                )
+              })}
+            </div>
             <label className="mt-3 block text-sm font-medium">Community (optional)</label>
             <select
               value={connectCommunityId ?? ''}
@@ -2174,25 +2310,27 @@ function FriendGraphInner({
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
               Create a bidirectional connection.
             </p>
-            {selfNodeId != null &&
-            (pendingConn.source === selfNodeId || pendingConn.target === selfNodeId) ? (
-              <>
-                <label className="mt-3 block text-sm font-medium">
-                  Relationship to You
-                </label>
-                <select
-                  value={connEdgeRelationToUser}
-                  onChange={(e) => setConnEdgeRelationToUser(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm capitalize dark:border-zinc-600"
-                >
-                  {RELATION_TO_YOU_OPTIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r[0].toUpperCase() + r.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </>
-            ) : null}
+            <label className="mt-3 block text-sm font-medium">Relationship types (optional)</label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(RELATION_TYPES as unknown as string[]).map((tag) => {
+                const selected = pendingRelationTags.includes(tag)
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    className={relationTagPickerClass(selected)}
+                    onClick={() => {
+                      const next = selected
+                        ? pendingRelationTags.filter((t) => t !== tag)
+                        : [...pendingRelationTags, tag]
+                      setPendingRelationTags(normalizeRelationTags(next))
+                    }}
+                  >
+                    {tag}
+                  </button>
+                )
+              })}
+            </div>
             <label className="mt-3 block text-sm font-medium">Community (optional)</label>
             <select
               value={pendingCommunityId ?? ''}
@@ -2208,6 +2346,13 @@ function FriendGraphInner({
                 </option>
               ))}
             </select>
+            <label className="mt-3 block text-sm font-medium">Note (optional)</label>
+            <input
+              value={pendingLabelNote}
+              onChange={(e) => setPendingLabelNote(e.target.value)}
+              placeholder="Optional note"
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
+            />
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
@@ -2222,6 +2367,8 @@ function FriendGraphInner({
                 onClick={() => {
                   setPendingConn(null)
                   setPendingCommunityId(null)
+                  setPendingRelationTags([])
+                  setPendingLabelNote('')
                 }}
               >
                 Cancel
@@ -2234,33 +2381,41 @@ function FriendGraphInner({
       {selectedEdge ? (
         <div className="fixed bottom-24 left-1/2 z-40 w-[min(22rem,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-zinc-200 bg-background p-4 shadow-xl dark:border-zinc-700">
           <p className="text-sm font-medium">Edit connection</p>
-          {selfNodeId != null &&
-          (selectedEdge.source === selfNodeId || selectedEdge.target === selfNodeId) ? (
-            <>
-              <label className="mt-3 block text-sm font-medium">Relationship to You</label>
-              <select
-                value={connEdgeRelationToUser}
-                onChange={(e) => {
-                  const next = e.target.value
-                  setConnEdgeRelationToUser(next)
-                  void saveEdgeLabel(next)
-                }}
-                className="mt-1 w-full rounded-md border px-3 py-2 text-sm capitalize dark:border-zinc-600"
-              >
-                {RELATION_TO_YOU_OPTIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r[0].toUpperCase() + r.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </>
-          ) : null}
+          <label className="mt-3 block text-sm font-medium">Relationship types (optional)</label>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(RELATION_TYPES as unknown as string[]).map((tag) => {
+              const selected = selectedEdgeRelationTags.includes(tag)
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  className={relationTagPickerClass(selected)}
+                  onClick={() => {
+                    const next = selected
+                      ? selectedEdgeRelationTags.filter((t) => t !== tag)
+                      : [...selectedEdgeRelationTags, tag]
+                    const normalized = normalizeRelationTags(next)
+                    setSelectedEdgeRelationTags(normalized)
+                    const legacy = legacyTagToRelationTypeLegacyField(normalized[0] ?? null)
+                    void updateSelectedEdgePair({
+                      relation_types: normalized,
+                      relation_type: legacy,
+                    })
+                  }}
+                >
+                  {tag}
+                </button>
+              )
+            })}
+          </div>
           <label className="mt-3 block text-sm font-medium">Community (optional)</label>
           <select
-            value={connEdgeCommunityId ?? ''}
-            onChange={(e) =>
-              setConnEdgeCommunityId(normalizeCommunityId(e.target.value || null))
-            }
+            value={selectedEdgeCommunityId ?? ''}
+            onChange={(e) => {
+              const next = normalizeCommunityId(e.target.value || null)
+              setSelectedEdgeCommunityId(next)
+              void updateSelectedEdgePair({ community_id: next })
+            }}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm dark:border-zinc-600"
           >
             <option value="">No community</option>
@@ -2270,18 +2425,25 @@ function FriendGraphInner({
               </option>
             ))}
           </select>
+          <label className="mt-3 block text-sm font-medium">Note (optional)</label>
+          <input
+            value={selectedEdgeLabel}
+            onChange={(e) => {
+              const next = e.target.value
+              setSelectedEdgeLabel(next)
+              void updateSelectedEdgePair({ label: next?.trim() || null })
+            }}
+            placeholder="Optional note"
+            className="mt-1 w-full rounded-md border px-3 py-2 text-sm dark:border-zinc-600"
+          />
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className="flex-1 rounded-md bg-foreground py-2 text-sm text-background"
-              onClick={() => void saveEdgeLabel()}
-            >
-              Save
-            </button>
-            <button
-              type="button"
               className="rounded-md border border-red-200 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:text-red-300"
-              onClick={() => void deleteEdge()}
+              onClick={() => {
+                if (!window.confirm('Delete this connection?')) return
+                void deleteEdge()
+              }}
             >
               Delete
             </button>
@@ -2401,9 +2563,19 @@ function FriendGraphInner({
                   rows={2}
                   className="mt-0.5 w-full resize-none border-b border-gray-300 bg-transparent px-1 py-0.5 text-base font-semibold text-foreground outline-none focus:border-blue-400 whitespace-normal break-words"
                 />
-                <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">
-                  Your relationship to them (category)
-                </p>
+                {panelRelationTags.length ? (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {panelRelationTags.map((t) => (
+                      <span key={t} className={relationTagPillClass(t)}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">
+                    No relationship tags
+                  </p>
+                )}
               </div>
             </div>
             <div className="mt-2 flex gap-2 overflow-x-auto py-1">
@@ -2501,27 +2673,29 @@ function FriendGraphInner({
                 <label className="text-xs uppercase tracking-wide text-gray-400">
                   Relationship to You
                 </label>
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Controls the ring colour on the graph (how they connect to{' '}
-                  <span className="font-medium">You</span>).
-                </p>
-                <select
-                  value={panelRelationToUser}
-                  onChange={(e) => {
-                    const next = e.target.value
-                    setPanelRelationToUser(next)
-                    void saveRelationToUser(next)
-                  }}
-                  className="mt-2 w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm capitalize outline-none focus:border-blue-400"
-                >
-                  {RELATION_TO_YOU_OPTIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r[0].toUpperCase() + r.slice(1)}
-                    </option>
-                  ))}
-                </select>
-                {panelRelationToUser.trim().toLowerCase() !==
-                loadedRelationForPanel ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(RELATION_TYPES as unknown as string[]).map((tag) => {
+                    const selected = panelRelationTags.includes(tag)
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        className={relationTagPickerClass(selected)}
+                        onClick={() => {
+                          const next = selected
+                            ? panelRelationTags.filter((t) => t !== tag)
+                            : [...panelRelationTags, tag]
+                          const normalized = normalizeRelationTags(next)
+                          setPanelRelationTags(normalized)
+                          void saveRelationTagsToUser(normalized)
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    )
+                  })}
+                </div>
+                {panelRelationTags.join(', ') !== loadedRelationTagsKey ? (
                   <div className="mt-2">
                     <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                       Note (optional)

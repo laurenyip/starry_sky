@@ -116,7 +116,7 @@ async function loadProfileAndGraph(
     db
       .from('edges')
       .select(
-        'id,owner_id,source_node_id,target_node_id,label,community_id,relation_type,created_at'
+        'id,owner_id,source_node_id,target_node_id,label,community_id,relation_type,relation_types,created_at'
       )
       .eq('owner_id', profile.id),
     db
@@ -159,6 +159,7 @@ async function loadProfileAndGraph(
     const row = e as Record<string, unknown>
     const cid = row.community_id
     const rt = row.relation_type
+    const rts = (row as any).relation_types
     return {
       id: e.id as string,
       source_node_id: e.source_node_id as string,
@@ -170,6 +171,9 @@ async function loadProfileAndGraph(
         rt == null || rt === ''
           ? null
           : String(rt).trim().toLowerCase(),
+      relation_types: Array.isArray(rts)
+        ? (rts as unknown[]).map((x) => String(x)).filter(Boolean)
+        : null,
       created_at:
         row.created_at == null || row.created_at === ''
           ? null

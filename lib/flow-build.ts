@@ -29,6 +29,8 @@ export type DbEdge = {
   label: string
   community_id: string | null
   relation_type: string | null
+  /** Multi-tag relationship to "You" (edge between self <-> node). */
+  relation_types?: string[] | null
   created_at: string | null
 }
 
