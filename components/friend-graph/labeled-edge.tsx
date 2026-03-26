@@ -10,7 +10,6 @@ import {
 
 export type LabeledEdgeData = {
   displayName: string
-  relationshipLabel: string
   tooltip: string
   baseStroke: string
   communityKey: string
@@ -53,7 +52,7 @@ export function LabeledEdge({
     (style?.transition as string | undefined) ??
     'stroke 0.28s ease, stroke-width 0.28s ease, opacity 0.28s ease'
 
-  const rel = (data?.relationshipLabel ?? '').trim() || '—'
+  const rel = (data?.displayName ?? '').trim() || '—'
 
   return (
     <>

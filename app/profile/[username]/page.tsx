@@ -116,7 +116,7 @@ async function loadProfileAndGraph(
     db
       .from('edges')
       .select(
-        'id,owner_id,source_node_id,target_node_id,label,community_id,relation_type'
+        'id,owner_id,source_node_id,target_node_id,label,community_id,relation_type,created_at'
       )
       .eq('owner_id', profile.id),
     db
@@ -170,6 +170,10 @@ async function loadProfileAndGraph(
         rt == null || rt === ''
           ? null
           : String(rt).trim().toLowerCase(),
+      created_at:
+        row.created_at == null || row.created_at === ''
+          ? null
+          : String(row.created_at),
     }
   })
 

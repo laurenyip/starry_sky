@@ -1,6 +1,5 @@
 'use client'
 
-import { relationshipTitle } from '@/lib/graph-model'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import Image from 'next/image'
 
@@ -14,13 +13,26 @@ export type PersonNodeData = {
   relationBorderHex?: string
   /** Community legend focus: bright glow ring in this colour for member nodes. */
   communityMemberGlowHex?: string | null
+  /** Membership indicators (one or more community colours). */
+  communityColorDots?: string[]
+  isSelf?: boolean
 }
 
 function initials(name: string): string {
-  const p = name.trim().split(/\s+/).filter(Boolean)
-  if (p.length === 0) return '?'
-  if (p.length === 1) return p[0].slice(0, 2).toUpperCase()
-  return (p[0][0] + p[p.length - 1][0]).toUpperCase()
+  const t = name.trim()
+  if (!t) return '?'
+  return t[0]!.toUpperCase()
+}
+
+function splitNameLabel(name: string): string[] {
+  const t = name.trim()
+  if (t.length <= 20) return [t]
+  let splitAt = t.lastIndexOf(' ', 20)
+  if (splitAt < 0) splitAt = 20
+  const first = t.slice(0, splitAt).trim()
+  const second = t.slice(splitAt).trim()
+  if (!second) return [first]
+  return [first, second]
 }
 
 export function PersonNode({
@@ -29,9 +41,9 @@ export function PersonNode({
 }: NodeProps<Node<PersonNodeData>>) {
   const connectable = data.shiftConnect === true
   const avatar = data.avatarUrl?.trim()
-  const ringHex = data.relationBorderHex?.trim()
+  const isSelf = data.isSelf === true
   const glowHex = data.communityMemberGlowHex?.trim()
-  const defaultRing = !selected && !ringHex && !glowHex
+  const labelLines = isSelf ? ['You'] : splitNameLabel(data.name)
 
   const glowStyle =
     !selected && glowHex
@@ -44,18 +56,16 @@ export function PersonNode({
   return (
     <div
       className={[
-        'relative flex h-[52px] w-[52px] select-none items-center justify-center overflow-hidden rounded-full border-2 bg-background text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform,border-color,opacity]',
+        'relative flex h-[52px] w-[52px] select-none items-center justify-center rounded-full text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform,border-color,opacity]',
+        isSelf ? 'h-[84px] w-[84px]' : '',
         selected
-          ? 'border-violet-500 ring-2 ring-violet-400/40'
-          : defaultRing
-            ? 'border-zinc-300 dark:border-zinc-600'
-            : '',
+          ? 'ring-2 ring-violet-400/40'
+          : '',
         data.justAdded ? 'animate-[node-in_0.65s_cubic-bezier(0.34,1.56,0.64,1)]' : '',
       ]
         .filter(Boolean)
         .join(' ')}
       style={{
-        ...(!selected && ringHex && !glowHex ? { borderColor: ringHex } : {}),
         ...glowStyle,
       }}
       title={data.name}
@@ -68,23 +78,83 @@ export function PersonNode({
         style={{ width: 10, height: 10, opacity: connectable ? 0.35 : 0 }}
         isConnectable={connectable}
       />
-      {avatar ? (
-        <Image
-          src={avatar}
-          alt=""
-          width={48}
-          height={48}
-          className="h-full w-full object-cover"
-          unoptimized
-        />
+      {isSelf ? (
+        <div
+          className="h-full w-full rounded-full p-[3px]"
+          style={{ backgroundColor: selected ? '#8B5CF6' : '#111827' }}
+        >
+          <div className="h-full w-full rounded-full bg-white p-[2px]">
+            <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-sm font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100">
+              {avatar ? (
+                <Image
+                  src={avatar}
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="h-full w-full object-cover"
+                  unoptimized
+                />
+              ) : (
+                <span className="pointer-events-none leading-none tracking-tight">
+                  {initials(data.name)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
       ) : (
-        <span className="pointer-events-none leading-none tracking-tight">
-          {initials(data.name)}
-        </span>
+        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-sm font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100">
+          {avatar ? (
+            <Image
+              src={avatar}
+              alt=""
+              width={48}
+              height={48}
+              className="h-full w-full object-cover"
+              unoptimized
+            />
+          ) : (
+            <span className="pointer-events-none leading-none tracking-tight">
+              {initials(data.name)}
+            </span>
+          )}
+        </div>
       )}
-      <span className="pointer-events-none absolute -bottom-5 left-1/2 max-w-[7rem] -translate-x-1/2 truncate text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
-        {relationshipTitle(data.relationship)}
-      </span>
+      {data.communityColorDots?.length ? (
+        <div className="pointer-events-none absolute inset-0">
+          {data.communityColorDots.map((hex, i) => {
+            const total = data.communityColorDots!.length
+            const angleDeg =
+              total === 1 ? 270 : 200 + (i * (340 - 200)) / (total - 1)
+            const rad = (angleDeg * Math.PI) / 180
+            const orbit = 18
+            const size = 5
+            return (
+              <span
+                key={`${hex}-${i}`}
+                className="absolute rounded-full border border-white dark:border-zinc-900"
+                style={{
+                  width: size,
+                  height: size,
+                  backgroundColor: hex,
+                  left: `calc(50% + ${Math.cos(rad) * orbit}px - ${size / 2}px)`,
+                  top: `calc(50% + ${Math.sin(rad) * orbit}px - ${size / 2}px)`,
+                }}
+              />
+            )
+          })}
+        </div>
+      ) : null}
+      <div
+        className={`pointer-events-none absolute left-1/2 w-[7.5rem] -translate-x-1/2 text-center leading-[1.1] whitespace-normal break-words dark:text-zinc-400 ${
+          isSelf
+            ? '-bottom-9 text-[12px] font-bold text-zinc-700'
+            : '-bottom-8 text-[10px] font-medium text-zinc-600'
+        }`}
+      >
+        {labelLines[0]}
+        {labelLines[1] ? <><br />{labelLines[1]}</> : null}
+      </div>
       <Handle
         type="source"
         position={Position.Bottom}

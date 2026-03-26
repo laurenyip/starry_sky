@@ -34,9 +34,12 @@ export type DbEdge = {
   label: string
   community_id: string | null
   relation_type: string | null
+  created_at: string | null
 }
 
 export const DEFAULT_EDGE_NEUTRAL = '#AAAAAA'
+const NORMAL_NODE_SIZE = 52
+const SELF_NODE_SIZE = 84
 
 export type FlowBuildOptions = {
   highlightPersonId?: string | null
@@ -46,6 +49,12 @@ export type FlowBuildOptions = {
   communityColors?: Map<string, string>
   /** Node id for the signed-in user ("You"); used with edge.relation_type for borders. */
   selfNodeId?: string | null
+}
+
+function normalizeCommunityId(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const t = value.trim()
+  return t.length ? t : null
 }
 
 function hasPinnedLocal(p: DbPerson): boolean {
@@ -185,10 +194,16 @@ export function buildFlowElements(
     )
 
     for (const p of group) {
-      const pos = positions.get(p.id) ?? {
-        x: CONSTELLATION_WIDTH / 2,
-        y: CONSTELLATION_HEIGHT / 2,
-      }
+      const fallback = p.is_self
+        ? {
+            x: CONSTELLATION_WIDTH / 2 - SELF_NODE_SIZE / 2,
+            y: CONSTELLATION_HEIGHT / 2 - SELF_NODE_SIZE / 2,
+          }
+        : {
+            x: CONSTELLATION_WIDTH / 2 - NORMAL_NODE_SIZE / 2,
+            y: CONSTELLATION_HEIGHT / 2 - NORMAL_NODE_SIZE / 2,
+          }
+      const pos = p.is_self ? fallback : positions.get(p.id) ?? fallback
       personNodes.push({
         id: p.id,
         type: 'person',
@@ -202,7 +217,9 @@ export function buildFlowElements(
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
           relationBorderHex: relationBorderForPerson(p),
+          isSelf: p.is_self,
         },
+        draggable: !p.is_self,
         style: { zIndex: 2 },
       })
     }
@@ -232,10 +249,16 @@ export function buildFlowElements(
       options.runForceLayout
     )
     for (const p of orphanGroup) {
-      const position = orphanPositions.get(p.id) ?? {
-        x: CONSTELLATION_WIDTH / 2,
-        y: CONSTELLATION_HEIGHT / 2,
-      }
+      const fallback = p.is_self
+        ? {
+            x: CONSTELLATION_WIDTH / 2 - SELF_NODE_SIZE / 2,
+            y: CONSTELLATION_HEIGHT / 2 - SELF_NODE_SIZE / 2,
+          }
+        : {
+            x: CONSTELLATION_WIDTH / 2 - NORMAL_NODE_SIZE / 2,
+            y: CONSTELLATION_HEIGHT / 2 - NORMAL_NODE_SIZE / 2,
+          }
+      const position = p.is_self ? fallback : orphanPositions.get(p.id) ?? fallback
       personNodes.push({
         id: p.id,
         type: 'person',
@@ -249,7 +272,9 @@ export function buildFlowElements(
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
           relationBorderHex: relationBorderForPerson(p),
+          isSelf: p.is_self,
         },
+        draggable: !p.is_self,
         style: { zIndex: 2 },
       })
     }
@@ -262,8 +287,7 @@ export function buildFlowElements(
       a.localeCompare(b, undefined, { sensitivity: 'base' })
     )
     const displayName = `${sortedNames[0]} · ${sortedNames[1]}`
-    const relationshipLabel = e.label
-    const cid = e.community_id
+    const cid = normalizeCommunityId(e.community_id)
     const baseStroke = cid
       ? colorMap.get(cid) ?? DEFAULT_EDGE_NEUTRAL
       : DEFAULT_EDGE_NEUTRAL
@@ -276,12 +300,11 @@ export function buildFlowElements(
       type: 'labeled',
       data: {
         displayName,
-        relationshipLabel,
-        tooltip: `${displayName} — ${relationshipLabel}`,
+        tooltip: displayName,
         baseStroke,
         communityKey,
       },
-      style: { stroke: baseStroke, strokeWidth: 2, opacity: 1 },
+      style: { stroke: baseStroke, strokeWidth: 0.5, opacity: 1 },
       zIndex: 1,
     }
   })

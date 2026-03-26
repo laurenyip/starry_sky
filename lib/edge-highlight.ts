@@ -28,7 +28,9 @@ function baseStrokeOf(e: Edge): string {
 function communityKeyOf(e: Edge): string {
   const d = e.data as Record<string, unknown> | undefined
   const k = d?.communityKey
-  return typeof k === 'string' ? k : NO_COMMUNITY_KEY
+  if (typeof k !== 'string') return NO_COMMUNITY_KEY
+  const t = k.trim()
+  return t.length ? t : NO_COMMUNITY_KEY
 }
 
 export function applyGraphEdgeHighlights(
@@ -43,7 +45,7 @@ export function applyGraphEdgeHighlights(
     const selected = selectedEdgeId === e.id
 
     let stroke = base
-    let strokeWidth = 2
+    let strokeWidth = 0.5
     let opacity = 1
 
     if (communityHighlight?.selectedCommunityId != null) {
@@ -51,26 +53,22 @@ export function applyGraphEdgeHighlights(
       const match = commKey === sid
       if (match) {
         stroke = communityHighlight.selectedCommunityHex
-        strokeWidth = 3
+        strokeWidth = 1.5
         opacity = 1
       } else {
         stroke = NEUTRAL
-        strokeWidth = 1
+        strokeWidth = 0.5
         opacity = 0.1
       }
     } else if (state.kind === 'node') {
       const incident = e.source === state.nodeId || e.target === state.nodeId
       if (incident) {
-        strokeWidth = 4
+        strokeWidth = 1.5
         opacity = 1
       } else {
-        strokeWidth = 1.5
+        strokeWidth = 0.5
         opacity = 0.2
       }
-    }
-
-    if (selected) {
-      strokeWidth += 0.5
     }
 
     return {

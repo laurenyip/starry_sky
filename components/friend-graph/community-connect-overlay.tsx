@@ -12,7 +12,7 @@ type Props = {
 }
 
 /**
- * Dashed mesh between every pair of community members — purely visual (ViewportPortal coords).
+ * Dashed constellation chain between selected community members (ViewportPortal coords).
  */
 export function CommunityConnectOverlay({ pairs, stroke }: Props) {
   const lineSignature = useStore((s) => {
@@ -106,7 +106,7 @@ export function CommunityConnectOverlay({ pairs, stroke }: Props) {
             x2={ln.x2}
             y2={ln.y2}
             stroke={stroke}
-            strokeWidth={2}
+            strokeWidth={1}
             strokeOpacity={0.6}
             strokeDasharray="6 4"
             strokeLinecap="round"

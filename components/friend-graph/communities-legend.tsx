@@ -13,11 +13,15 @@ export function CommunitiesLegend({
   communities,
   activeCommunityKey,
   onPickCommunity,
+  assignCommunityId,
+  onToggleAssignCommunity,
   onNewCommunity,
 }: {
   communities: CommunityRow[]
   activeCommunityKey: string | null
   onPickCommunity: (key: string) => void
+  assignCommunityId: string | null
+  onToggleAssignCommunity: (communityId: string) => void
   onNewCommunity: () => void
 }) {
   return (
@@ -40,26 +44,47 @@ export function CommunitiesLegend({
               className="h-1 w-8 shrink-0 rounded-full"
               style={{ backgroundColor: DEFAULT_EDGE_NEUTRAL }}
             />
-            <span className="truncate">No community</span>
+            <span className="truncate">General</span>
           </button>
         </li>
         {communities.map((c) => (
           <li key={c.id}>
-            <button
-              type="button"
-              onClick={() => onPickCommunity(c.id)}
-              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+            <div
+              className={`rounded-lg px-2 py-1.5 transition-colors ${
                 activeCommunityKey === c.id
                   ? 'bg-zinc-200/80 dark:bg-zinc-700/80'
                   : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
+              } ${assignCommunityId === c.id ? 'ring-1 ring-zinc-400/70' : ''}`}
             >
-              <span
-                className="h-1 w-8 shrink-0 rounded-full"
-                style={{ backgroundColor: c.color }}
-              />
-              <span className="truncate">{c.name}</span>
-            </button>
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-1 w-8 shrink-0 rounded-full"
+                  style={{ backgroundColor: c.color }}
+                />
+                <span className="flex-1 truncate text-sm">{c.name}</span>
+                <button
+                  type="button"
+                  title="View community"
+                  className="rounded px-1 text-xs hover:bg-zinc-200/80 dark:hover:bg-zinc-700/80"
+                  onClick={() => onPickCommunity(c.id)}
+                >
+                  👁
+                </button>
+                <button
+                  type="button"
+                  title="Assign members"
+                  className="rounded px-1 text-xs hover:bg-zinc-200/80 dark:hover:bg-zinc-700/80"
+                  onClick={() => onToggleAssignCommunity(c.id)}
+                >
+                  ✏️
+                </button>
+              </div>
+              {assignCommunityId === c.id ? (
+                <p className="mt-1 text-[10px] italic text-zinc-500">
+                  Adding members...
+                </p>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>
