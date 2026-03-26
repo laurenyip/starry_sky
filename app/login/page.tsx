@@ -29,7 +29,7 @@ export default function LoginPage() {
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
-      options: { emailRedirectTo: redirectTo },
+      options: { emailRedirectTo: redirectTo } as any,
     })
 
     setLoading(false)
