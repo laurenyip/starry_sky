@@ -25,6 +25,7 @@ export default function SignupPage() {
       return
     }
     setLoading(true)
+    const redirectTo = `${window.location.origin}/auth/callback`
 
     const trimmedUsername = username.trim()
     if (!trimmedUsername) {
@@ -36,6 +37,7 @@ export default function SignupPage() {
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      options: { emailRedirectTo: redirectTo },
     })
 
     if (signUpError) {

@@ -19,19 +19,20 @@ export default function DashboardPage() {
   const ensureSession = useCallback(async () => {
     if (!supabase) return
     const {
-      data: { user },
+      data: { session },
       error,
-    } = await supabase.auth.getUser()
+    } = await supabase.auth.getSession()
     if (error) {
       setAuthError(error.message)
       setAuthChecked(true)
       return
     }
-    if (!user) {
+    if (!session) {
       setAuthChecked(true)
       router.replace('/login')
       return
     }
+    const user = session.user
     const { data: profile, error: perr } = await supabase
       .from('profiles')
       .select('id')

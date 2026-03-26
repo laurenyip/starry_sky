@@ -24,10 +24,12 @@ export default function LoginPage() {
       return
     }
     setLoading(true)
+    const redirectTo = `${window.location.origin}/auth/callback`
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
+      options: { emailRedirectTo: redirectTo },
     })
 
     setLoading(false)
