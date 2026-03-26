@@ -8,10 +8,11 @@ export default async function Home() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
   if (supabaseUrl && supabaseAnonKey) {
+    const cookieStore = await cookies()
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         getAll() {
-          return cookies().getAll()
+          return cookieStore.getAll()
         },
       },
     })
