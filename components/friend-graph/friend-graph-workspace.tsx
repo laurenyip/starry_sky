@@ -447,6 +447,7 @@ function FriendGraphInner({
     'idle'
   )
   const [panelName, setPanelName] = useState('')
+  const [creatingDraftNode, setCreatingDraftNode] = useState(false)
   const [panelRelationTags, setPanelRelationTags] = useState<string[]>([])
   const [panelRelationNote, setPanelRelationNote] = useState('')
   const [relationHistory, setRelationHistory] = useState<
@@ -1242,20 +1243,14 @@ function FriendGraphInner({
   useEffect(() => {
     if (!selectedPerson) return
     const rows = customAttributesToRows(parseCustomAttributes(selectedPerson.custom_attributes))
-    let changed = false
     const normalizedRows = rows.map((r) => {
       if (!isBirthdayKey(r.key)) return r
       const parsed = canonicalBirthday(r.value)
       if (!parsed.parseable || !parsed.canonical || parsed.canonical === r.value) return r
-      changed = true
       return { ...r, value: parsed.canonical }
     })
-    if (!changed) return
     setPanelRows(normalizedRows)
-    void saveNodePatch(selectedPerson.id, {
-      custom_attributes: rowsToCustomAttributes(normalizedRows),
-    })
-  }, [selectedPerson, saveNodePatch])
+  }, [selectedPerson])
 
   const saveRelationTagsToUser = useCallback(
     async (nextTagsRaw: string[]) => {
@@ -1724,35 +1719,128 @@ function FriendGraphInner({
       setSubmitErr('Add a location first, then try again.')
       return
     }
-    const group = people.filter((p) => p.location_id === locId)
-    const pos = scatterPersonInGroup(group.length, group.length + 1)
-    const { data: inserted, error: insErr } = await supabase
-      .from('nodes')
-      .insert({
-        owner_id: userId,
-        name: 'New person',
+    setCreatingDraftNode(true)
+    const draftId = `__draft__-${Date.now()}`
+    setSelectedPerson({
+      id: draftId,
+      name: 'New person',
+      location_id: locId,
+      relationship: 'friend',
+      things_to_remember: '',
+      custom_attributes: {},
+      position_x: null,
+      position_y: null,
+      pos_x: null,
+      pos_y: null,
+      avatar_url: null,
+      is_self: false,
+      created_at: null,
+    })
+  }, [locations])
+
+  const savePanelExplicit = useCallback(async () => {
+    if (!selectedPerson) return
+    setPanelSaving(true)
+    setPanelErr(null)
+    try {
+      const nextName = panelName.trim() || 'Unnamed'
+      const nextLocName = panelLocName.trim()
+      let locId = selectedPerson.location_id
+      if (nextLocName) {
+        const existing = locations.find(
+          (l) => l.name.trim().toLowerCase() === nextLocName.toLowerCase()
+        )
+        locId = existing?.id ?? null
+        if (!locId) locId = await addLocation(nextLocName)
+      } else {
+        locId = null
+      }
+      const nodePatch = {
+        name: nextName,
         location_id: locId,
-        relationship: 'friend',
-        things_to_remember: '',
-        custom_attributes: {},
-        position_x: pos.x,
-        position_y: pos.y,
-      })
-      .select(
-        'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self,created_at'
-      )
-      .single()
-    if (insErr) {
-      setSubmitErr(insErr.message || 'Failed to create person.')
-      return
+        things_to_remember: panelNotes,
+        custom_attributes: rowsToCustomAttributes(panelRows),
+      }
+      if (creatingDraftNode || selectedPerson.id.startsWith('__draft__')) {
+        const group = people.filter((p) => p.location_id === locId)
+        const pos = scatterPersonInGroup(group.length, group.length + 1)
+        const { data: inserted, error: insErr } = await supabase
+          .from('nodes')
+          .insert({
+            owner_id: userId,
+            ...nodePatch,
+            relationship: 'friend',
+            position_x: pos.x,
+            position_y: pos.y,
+          })
+          .select(
+            'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self,created_at'
+          )
+          .single()
+        if (insErr) {
+          showToast(insErr.message || 'Failed to save node.', 'error')
+          throw insErr
+        }
+        const newNode = {
+          ...(inserted as any),
+          position: { x: Number((inserted as any).position_x ?? 0), y: Number((inserted as any).position_y ?? 0) },
+          data: {},
+        }
+        setNodes((prev) => [...prev])
+        setCreatingDraftNode(false)
+        setHighlightId(String((inserted as any).id))
+        await loadData()
+        showToast('Node saved ✓', 'success')
+      } else {
+        const { error: uerr } = await supabase
+          .from('nodes')
+          .update(nodePatch)
+          .eq('id', selectedPerson.id)
+          .eq('owner_id', userId)
+        if (uerr) {
+          showToast(uerr.message || 'Failed to save node.', 'error')
+          throw uerr
+        }
+        if (panelNotes !== selectedPerson.things_to_remember) {
+          await supabase.from('remember_history').insert({
+            owner_id: userId,
+            node_id: selectedPerson.id,
+            content: panelNotes,
+            saved_at: new Date().toISOString(),
+          })
+        }
+        if (!selectedPerson.is_self) {
+          await saveRelationTagsToUser(panelRelationTags)
+        }
+        await loadData()
+        showToast('Node saved ✓', 'success')
+      }
+      markSaveSuccess()
+    } catch (e) {
+      markSaveFail((e as Error)?.message || 'Failed to save')
+    } finally {
+      setPanelSaving(false)
     }
-    const nid = inserted?.id as string
-    if (nid) setHighlightId(nid)
-    await loadData()
-    const created = people.find((p) => p.id === nid) ?? null
-    // After reload, select from fresh people list (fallback to minimal selection if not found).
-    setSelectedPerson(created ?? { ...(inserted as any), is_self: false })
-  }, [locations, people, supabase, userId, loadData])
+  }, [
+    selectedPerson,
+    panelName,
+    panelLocName,
+    panelNotes,
+    panelRows,
+    creatingDraftNode,
+    locations,
+    addLocation,
+    people,
+    supabase,
+    userId,
+    setNodes,
+    loadData,
+    panelRelationTags,
+    saveRelationTagsToUser,
+    markSaveSuccess,
+    markSaveFail,
+    showToast,
+  ])
 
   const confirmPendingEdge = useCallback(async () => {
     if (!pendingConn) return
@@ -1952,6 +2040,9 @@ function FriendGraphInner({
         edgeTypes={edgeTypes}
         onConnect={onConnect}
         connectionMode={ConnectionMode.Loose}
+        selectionOnDrag={false}
+        connectionLineStyle={{ stroke: 'transparent' }}
+        defaultEdgeOptions={{ style: { strokeDasharray: 'none' } }}
         nodesConnectable={shiftHeld}
         elementsSelectable
         onNodeClick={(_, n) => {
@@ -2017,7 +2108,6 @@ function FriendGraphInner({
             stroke="#CBD5E1"
             strokeWidth={0.4}
             strokeOpacity={0.35}
-            strokeDasharray="4 6"
             zIndex={2}
             interactive
             onLineClick={({ pairIndex, x, y }) => {
@@ -2477,6 +2567,8 @@ function FriendGraphInner({
         panelSaveState={panelSaveState}
         panelErr={panelErr}
         panelSaving={panelSaving}
+        onSave={() => void savePanelExplicit()}
+        saveLabel={creatingDraftNode ? 'Save New Node' : 'Save Changes'}
         canDelete={Boolean(selectedPerson && !selectedPerson.is_self)}
         onDelete={() => void deletePerson()}
       >
@@ -2487,37 +2579,6 @@ function FriendGraphInner({
               <input
                 value={panelLocName}
                 onChange={(e) => setPanelLocName(e.target.value)}
-                onBlur={() => {
-                  const nextName = panelLocName.trim()
-                  const prevName =
-                    locations.find((l) => l.id === selectedPerson.location_id)?.name ?? ''
-                  if (nextName === prevName.trim()) return
-                  void (async () => {
-                    if (!nextName) {
-                      setPanelLocId('')
-                      await saveNodePatch(selectedPerson.id, {
-                        location_id: null,
-                        pos_x: null,
-                        pos_y: null,
-                      })
-                      return
-                    }
-                    const existing = locations.find(
-                      (l) => l.name.trim().toLowerCase() === nextName.toLowerCase()
-                    )
-                    let locId = existing?.id ?? null
-                    if (!locId) {
-                      locId = await addLocation(nextName)
-                    }
-                    if (!locId) return
-                    setPanelLocId(locId)
-                    await saveNodePatch(selectedPerson.id, {
-                      location_id: locId,
-                      pos_x: null,
-                      pos_y: null,
-                    })
-                  })()
-                }}
                 placeholder="e.g. Vancouver"
                 className="mt-1 w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
               />
@@ -2541,7 +2602,6 @@ function FriendGraphInner({
                             : [...panelRelationTags, tag]
                           const normalized = normalizeRelationTags(next)
                           setPanelRelationTags(normalized)
-                          void saveRelationTagsToUser(normalized)
                         }}
                       >
                         {tag}
@@ -2569,7 +2629,6 @@ function FriendGraphInner({
               <textarea
                 value={panelNotes}
                 onChange={(e) => setPanelNotes(e.target.value)}
-                onBlur={() => void saveThingsToRememberWithHistory()}
                 rows={5}
                 className="mt-1 w-full resize-y border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
               />
@@ -2662,21 +2721,6 @@ function FriendGraphInner({
                           )
                         )
                       }
-                      onBlur={() => {
-                        if (
-                          JSON.stringify(
-                            rowsToCustomAttributes(panelRows)
-                          ) ===
-                          JSON.stringify(
-                            parseCustomAttributes(selectedPerson.custom_attributes)
-                          )
-                        ) {
-                          return
-                        }
-                        void saveNodePatch(selectedPerson.id, {
-                          custom_attributes: rowsToCustomAttributes(panelRows),
-                        })
-                      }}
                     />
                     <div className="min-w-0 flex-1">
                       {isBirthdayKey(row.key) ? (
@@ -2692,21 +2736,6 @@ function FriendGraphInner({
                                 )
                               )
                             }
-                            onBlur={() => {
-                              if (
-                                JSON.stringify(
-                                  rowsToCustomAttributes(panelRows)
-                                ) ===
-                                JSON.stringify(
-                                  parseCustomAttributes(selectedPerson.custom_attributes)
-                                )
-                              ) {
-                                return
-                              }
-                              void saveNodePatch(selectedPerson.id, {
-                                custom_attributes: rowsToCustomAttributes(panelRows),
-                              })
-                            }}
                           />
                           {canonicalBirthday(row.value).parseable &&
                           canonicalBirthday(row.value).canonical ? (
@@ -2733,21 +2762,6 @@ function FriendGraphInner({
                               )
                             )
                           }
-                          onBlur={() => {
-                            if (
-                              JSON.stringify(
-                                rowsToCustomAttributes(panelRows)
-                              ) ===
-                              JSON.stringify(
-                                parseCustomAttributes(selectedPerson.custom_attributes)
-                              )
-                            ) {
-                              return
-                            }
-                            void saveNodePatch(selectedPerson.id, {
-                              custom_attributes: rowsToCustomAttributes(panelRows),
-                            })
-                          }}
                         />
                       )}
                     </div>

@@ -25,7 +25,7 @@ export function CommunityConnectOverlay({
   stroke,
   strokeWidth = 1,
   strokeOpacity = 0.6,
-  strokeDasharray = '6 4',
+  strokeDasharray = 'none',
   zIndex = 4,
   interactive = false,
   onLineClick,

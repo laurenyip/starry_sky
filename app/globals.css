@@ -73,4 +73,16 @@ body {
   .react-flow__edge-path {
     cursor: pointer;
   }
+
+  .react-flow__node.selected > div,
+  .react-flow__node:focus > div,
+  .react-flow__node:focus-visible > div {
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  .react-flow__node.selected {
+    box-shadow: none !important;
+    outline: none !important;
+  }
 }

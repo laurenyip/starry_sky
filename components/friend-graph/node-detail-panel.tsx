@@ -30,6 +30,8 @@ export function NodeDetailPanel(props: {
   panelSaveState: 'idle' | 'saved' | 'error'
   panelErr: string | null
   panelSaving: boolean
+  onSave?: () => void
+  saveLabel?: string
   canDelete: boolean
   onDelete: () => void
 }) {
@@ -53,6 +55,8 @@ export function NodeDetailPanel(props: {
     panelSaveState,
     panelErr,
     panelSaving,
+    onSave,
+    saveLabel,
     canDelete,
     onDelete,
   } = props
@@ -256,6 +260,23 @@ export function NodeDetailPanel(props: {
           <p className="text-sm text-red-600" role="alert">
             {panelErr}
           </p>
+        ) : null}
+        {onSave ? (
+          <button
+            type="button"
+            disabled={panelSaving}
+            className="w-full rounded-md bg-foreground py-1.5 text-sm text-background disabled:opacity-60"
+            onClick={onSave}
+          >
+            {panelSaving ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background/80 border-t-transparent" />
+                Saving...
+              </span>
+            ) : (
+              saveLabel ?? 'Save'
+            )}
+          </button>
         ) : null}
         {canDelete ? (
           <button
