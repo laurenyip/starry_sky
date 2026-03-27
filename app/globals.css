@@ -85,4 +85,31 @@ body {
     box-shadow: none !important;
     outline: none !important;
   }
+
+  /* Remove any default React Flow wrapper card/selection visuals for custom person nodes. */
+  .react-flow__node-person,
+  .react-flow__node-person.selected,
+  .react-flow__node-person:focus,
+  .react-flow__node-person:focus-visible {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  .react-flow__node-person > div,
+  .react-flow__node-person.selected > div,
+  .react-flow__node-person:focus > div,
+  .react-flow__node-person:focus-visible > div {
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  /* Disable marquee/selection rectangle artifact. */
+  .react-flow__nodesselection-rect,
+  .react-flow__selection {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
 }
