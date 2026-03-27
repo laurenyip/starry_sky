@@ -13,6 +13,8 @@ export type PersonNodeData = {
   relationBorderHex?: string
   /** Community legend focus: bright glow ring in this colour for member nodes. */
   communityMemberGlowHex?: string | null
+  /** Star-map constellation mode is active. */
+  constellationMode?: boolean
   /** Membership indicators (one or more community colours). */
   communityColorDots?: string[]
   isSelf?: boolean
@@ -43,20 +45,23 @@ export function PersonNode({
   const avatar = data.avatarUrl?.trim()
   const isSelf = data.isSelf === true
   const glowHex = data.communityMemberGlowHex?.trim()
+  const constellationMode = data.constellationMode === true
   const labelLines = isSelf ? ['You'] : splitNameLabel(data.name)
 
   const glowStyle =
     !selected && glowHex
       ? {
-          boxShadow: `0 0 16px 5px ${glowHex}99, 0 0 0 2px ${glowHex}`,
-          borderColor: glowHex,
+          boxShadow: constellationMode
+            ? `0 0 22px 7px rgba(255,255,255,0.18), 0 0 0 2px rgba(255,255,255,0.55), 0 0 30px 10px rgba(251,191,36,0.12)`
+            : `0 0 16px 5px ${glowHex}99, 0 0 0 2px ${glowHex}`,
+          borderColor: constellationMode ? 'rgba(255,255,255,0.6)' : glowHex,
         }
       : undefined
 
   return (
     <div
       className={[
-        'relative flex h-[52px] w-[52px] select-none items-center justify-center rounded-full text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform,border-color,opacity]',
+        'relative flex h-[52px] w-[52px] cursor-pointer select-none items-center justify-center rounded-full text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform,border-color,opacity] hover:scale-[1.03] hover:shadow-lg',
         isSelf ? 'h-[84px] w-[84px]' : '',
         selected
           ? 'ring-2 ring-violet-400/40'
@@ -70,14 +75,40 @@ export function PersonNode({
       }}
       title={data.name}
     >
-      <Handle
-        type="target"
-        position={Position.Top}
-        id="t"
-        className="!border-none !bg-transparent"
-        style={{ width: 10, height: 10, opacity: connectable ? 0.35 : 0 }}
-        isConnectable={connectable}
-      />
+      {(
+        [
+          ['n', 0, -1],
+          ['ne', Math.SQRT1_2, -Math.SQRT1_2],
+          ['e', 1, 0],
+          ['se', Math.SQRT1_2, Math.SQRT1_2],
+          ['s', 0, 1],
+          ['sw', -Math.SQRT1_2, Math.SQRT1_2],
+          ['w', -1, 0],
+          ['nw', -Math.SQRT1_2, -Math.SQRT1_2],
+        ] as const
+      ).map(([hid, vx, vy]) => {
+        const orbit = isSelf ? 42 : 26
+        const size = 10
+        const commonStyle = {
+          width: size,
+          height: size,
+          opacity: connectable ? 0.35 : 0,
+          left: `calc(50% + ${vx * orbit}px)`,
+          top: `calc(50% + ${vy * orbit}px)`,
+          transform: 'translate(-50%, -50%)',
+        } as const
+        return (
+          <Handle
+            key={`t-${hid}`}
+            type="target"
+            position={Position.Top}
+            id={`t-${hid}`}
+            className="!absolute !border-none !bg-transparent"
+            style={commonStyle}
+            isConnectable={connectable}
+          />
+        )
+      })}
       {isSelf ? (
         <div
           className="h-full w-full rounded-full p-[3px]"
@@ -155,14 +186,40 @@ export function PersonNode({
         {labelLines[0]}
         {labelLines[1] ? <><br />{labelLines[1]}</> : null}
       </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="s"
-        className="!border-none !bg-transparent"
-        style={{ width: 10, height: 10, opacity: connectable ? 0.35 : 0 }}
-        isConnectable={connectable}
-      />
+      {(
+        [
+          ['n', 0, -1],
+          ['ne', Math.SQRT1_2, -Math.SQRT1_2],
+          ['e', 1, 0],
+          ['se', Math.SQRT1_2, Math.SQRT1_2],
+          ['s', 0, 1],
+          ['sw', -Math.SQRT1_2, Math.SQRT1_2],
+          ['w', -1, 0],
+          ['nw', -Math.SQRT1_2, -Math.SQRT1_2],
+        ] as const
+      ).map(([hid, vx, vy]) => {
+        const orbit = isSelf ? 42 : 26
+        const size = 10
+        const commonStyle = {
+          width: size,
+          height: size,
+          opacity: connectable ? 0.35 : 0,
+          left: `calc(50% + ${vx * orbit}px)`,
+          top: `calc(50% + ${vy * orbit}px)`,
+          transform: 'translate(-50%, -50%)',
+        } as const
+        return (
+          <Handle
+            key={`s-${hid}`}
+            type="source"
+            position={Position.Top}
+            id={`s-${hid}`}
+            className="!absolute !border-none !bg-transparent"
+            style={commonStyle}
+            isConnectable={connectable}
+          />
+        )
+      })}
     </div>
   )
 }

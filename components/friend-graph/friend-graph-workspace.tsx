@@ -3,7 +3,9 @@
 import { useToast } from '@/components/toast-provider'
 import { CommunityConnectOverlay } from '@/components/friend-graph/community-connect-overlay'
 import { CommunitiesLegend } from '@/components/friend-graph/communities-legend'
+import { ConstellationOverlay } from '@/components/friend-graph/constellation-overlay'
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
+import { NodeDetailPanel } from '@/components/friend-graph/node-detail-panel'
 import { PersonNode } from '@/components/friend-graph/person-node'
 import {
   dedupeEdgesForGraph,
@@ -389,6 +391,7 @@ function FriendGraphInner({
   const [selectedCommunityId, setSelectedCommunityId] = useState<string | null>(
     null
   )
+  const [hoverCommunityId, setHoverCommunityId] = useState<string | null>(null)
 
   const [addConnectionOpen, setAddConnectionOpen] = useState(false)
   const [connectPersonAId, setConnectPersonAId] = useState('')
@@ -409,6 +412,11 @@ function FriendGraphInner({
   const [newCommunityName, setNewCommunityName] = useState('')
   const [newCommunityColor, setNewCommunityColor] = useState('#FF6B6B')
   const [creatingCommunity, setCreatingCommunity] = useState(false)
+  const [editCommunityOpen, setEditCommunityOpen] = useState(false)
+  const [editCommunityId, setEditCommunityId] = useState<string | null>(null)
+  const [editCommunityName, setEditCommunityName] = useState('')
+  const [editCommunityColor, setEditCommunityColor] = useState('#FF6B6B')
+  const [savingCommunityEdit, setSavingCommunityEdit] = useState(false)
   const [assignCommunityId, setAssignCommunityId] = useState<string | null>(null)
   const [nodeContextMenu, setNodeContextMenu] = useState<{
     nodeId: string
@@ -421,15 +429,6 @@ function FriendGraphInner({
     label: string
   } | null>(null)
 
-  const [addPersonOpen, setAddPersonOpen] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newLocationId, setNewLocationId] = useState('')
-  const [newRel, setNewRel] = useState<RelationshipKind>('friend')
-  const [newNotes, setNewNotes] = useState('')
-  const [newCustomRows, setNewCustomRows] = useState<
-    { key: string; value: string }[]
-  >([{ key: '', value: '' }])
-  const [addLocInline, setAddLocInline] = useState('')
   const [submitErr, setSubmitErr] = useState<string | null>(null)
 
   const [panelLocId, setPanelLocId] = useState('')
@@ -439,6 +438,7 @@ function FriendGraphInner({
     [{ key: '', value: '' }]
   )
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarPickerActive, setAvatarPickerActive] = useState(false)
   const [panelPhotos, setPanelPhotos] = useState<NodePhotoRow[]>([])
   const [photoLightbox, setPhotoLightbox] = useState<NodePhotoRow | null>(null)
   const [panelSaving, setPanelSaving] = useState(false)
@@ -555,12 +555,17 @@ function FriendGraphInner({
     ]
   )
 
-  const selectedCommunityHex = useMemo(() => {
-    if (!selectedCommunityId) return DEFAULT_EDGE_NEUTRAL
-    if (selectedCommunityId === NO_COMMUNITY_KEY) return DEFAULT_EDGE_NEUTRAL
-    const cid = normalizeCommunityId(selectedCommunityId)
+  const activeConstellationId = useMemo(() => {
+    const key = hoverCommunityId ?? selectedCommunityId
+    return key
+  }, [hoverCommunityId, selectedCommunityId])
+
+  const activeConstellationHex = useMemo(() => {
+    if (!activeConstellationId) return DEFAULT_EDGE_NEUTRAL
+    if (activeConstellationId === NO_COMMUNITY_KEY) return DEFAULT_EDGE_NEUTRAL
+    const cid = normalizeCommunityId(activeConstellationId)
     return (cid ? communityColorMap.get(cid) : null) ?? DEFAULT_EDGE_NEUTRAL
-  }, [selectedCommunityId, communityColorMap])
+  }, [activeConstellationId, communityColorMap])
 
   /** Join-order chain for dashed overlay lines (not stored in DB). */
   const communityOverlayPairs = useMemo(() => {
@@ -616,9 +621,9 @@ function FriendGraphInner({
     return pairs
   }, [people, locations])
 
-  const memberSetForCommunity = useMemo(() => {
-    if (!selectedCommunityId) return null
-    if (selectedCommunityId === NO_COMMUNITY_KEY) {
+  const memberSetForConstellation = useMemo(() => {
+    if (!activeConstellationId) return null
+    if (activeConstellationId === NO_COMMUNITY_KEY) {
       const out = new Set<string>()
       for (const p of people) {
         const ids = nodeCommunityMap.get(p.id) ?? []
@@ -626,29 +631,60 @@ function FriendGraphInner({
       }
       return out
     }
-    const sid = normalizeCommunityId(selectedCommunityId)
+    const sid = normalizeCommunityId(activeConstellationId)
     if (!sid) return new Set<string>()
     const out = new Set<string>()
     for (const [nid, cids] of nodeCommunityMap.entries()) {
       if (cids.includes(sid)) out.add(nid)
     }
     return out
-  }, [selectedCommunityId, nodeCommunityMap, people])
+  }, [activeConstellationId, nodeCommunityMap, people])
+
+  const constellationMode = Boolean(
+    activeConstellationId && activeConstellationId !== NO_COMMUNITY_KEY
+  )
+
+  const constellationMemberIds = useMemo(
+    () => (memberSetForConstellation ? [...memberSetForConstellation] : []),
+    [memberSetForConstellation]
+  )
+
+  const constellationPairs = useMemo(() => {
+    if (!constellationMode) return []
+    const ids = constellationMemberIds
+    if (ids.length < 2) return []
+    // Full "star map" mesh for small constellations; fall back to chain for large.
+    if (ids.length <= 18) {
+      const pairs: { source: string; target: string }[] = []
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          pairs.push({ source: ids[i]!, target: ids[j]! })
+        }
+      }
+      return pairs
+    }
+    const sorted = [...ids].sort((a, b) => a.localeCompare(b))
+    const pairs: { source: string; target: string }[] = []
+    for (let i = 0; i < sorted.length - 1; i++) {
+      pairs.push({ source: sorted[i]!, target: sorted[i + 1]! })
+    }
+    return pairs
+  }, [constellationMode, constellationMemberIds])
 
   const communityHighlightOpts = useMemo(() => {
-    if (!selectedCommunityId) return null
+    if (!activeConstellationId) return null
     return {
-      selectedCommunityId,
-      selectedCommunityHex,
+      selectedCommunityId: activeConstellationId,
+      selectedCommunityHex: activeConstellationHex,
     }
-  }, [selectedCommunityId, selectedCommunityHex])
+  }, [activeConstellationId, activeConstellationHex])
 
   const nodesForFlow = useMemo(() => {
-    if (!memberSetForCommunity) return initialNodes
-    const glowHex = selectedCommunityHex
+    if (!memberSetForConstellation) return initialNodes
+    const glowHex = activeConstellationHex
     return initialNodes.map((n) => {
       if (n.type !== 'person') return n
-      const inSet = memberSetForCommunity.has(n.id)
+      const inSet = memberSetForConstellation.has(n.id)
       const baseData = (n.data ?? {}) as Record<string, unknown>
       const memberCommunityIds = nodeCommunityMap.get(n.id) ?? []
       const memberDots = memberCommunityIds
@@ -658,17 +694,25 @@ function FriendGraphInner({
         ...n,
         style: {
           ...n.style,
-          opacity: inSet ? 1 : 0.15,
+          opacity: inSet ? 1 : constellationMode ? 0.08 : 0.15,
           transition: 'opacity 0.28s ease',
         },
         data: {
           ...baseData,
           communityMemberGlowHex: inSet ? glowHex : null,
+          constellationMode,
           communityColorDots: memberDots,
         },
       }
     })
-  }, [initialNodes, memberSetForCommunity, selectedCommunityHex, nodeCommunityMap, communityColorMap])
+  }, [
+    initialNodes,
+    memberSetForConstellation,
+    activeConstellationHex,
+    constellationMode,
+    nodeCommunityMap,
+    communityColorMap,
+  ])
 
   const styledEdges = useMemo(
     () =>
@@ -676,13 +720,24 @@ function FriendGraphInner({
         baseFlowEdges,
         graphHighlight,
         selectedEdge?.id ?? null,
-        communityHighlightOpts
+        communityHighlightOpts,
+        { starMapMode: constellationMode }
       ),
-    [baseFlowEdges, graphHighlight, selectedEdge?.id, communityHighlightOpts]
+    [baseFlowEdges, graphHighlight, selectedEdge?.id, communityHighlightOpts, constellationMode]
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nodesForFlow)
   const [edges, setEdges, onEdgesChange] = useEdgesState(styledEdges)
+
+  const clearTransientConnectionPreview = useCallback(() => {
+    // Drop any ad-hoc edge objects that are not backed by DB edge data.
+    setEdges((prev) =>
+      prev.filter((edge) => {
+        const d = edge.data as Record<string, unknown> | undefined
+        return typeof d?.communityKey === 'string'
+      })
+    )
+  }, [setEdges])
 
   const patchPersonAvatar = useCallback(
     (personId: string, url: string | null) => {
@@ -705,13 +760,29 @@ function FriendGraphInner({
 
   useEffect(() => {
     const sh = shiftRef.current
-    setNodes(
-      nodesForFlow.map((n) => {
-        if (n.type !== 'person') return n
-        const d = n.data as Record<string, unknown>
-        return { ...n, data: { ...d, shiftConnect: sh } }
+    setNodes((prev) => {
+      const prevById = new Map(prev.map((n) => [n.id, n]))
+      return nodesForFlow.map((n) => {
+        const withShift =
+          n.type === 'person'
+            ? {
+                ...n,
+                data: {
+                  ...(n.data as Record<string, unknown>),
+                  shiftConnect: sh,
+                },
+              }
+            : n
+        const existing = prevById.get(n.id)
+        // Do not reset coordinates during pane/selection clicks.
+        // Position updates should come from drag interactions + persistence flow.
+        if (!existing) return withShift
+        return {
+          ...withShift,
+          position: existing.position,
+        }
       })
-    )
+    })
     setEdges(styledEdges)
   }, [nodesForFlow, styledEdges, setNodes, setEdges])
 
@@ -968,6 +1039,10 @@ function FriendGraphInner({
       setPanelRelationNote('')
     }
   }, [selectedPerson, locations])
+
+  useEffect(() => {
+    if (!selectedPerson) setAvatarPickerActive(false)
+  }, [selectedPerson])
 
   useEffect(() => {
     if (!selectedEdge) {
@@ -1349,6 +1424,7 @@ function FriendGraphInner({
       setConnectErr(insErr.message || 'Failed to add connection.')
       return
     }
+    clearTransientConnectionPreview()
     setAddConnectionOpen(false)
     setConnectPersonAId('')
     setConnectPersonBId('')
@@ -1364,6 +1440,7 @@ function FriendGraphInner({
     connectCommunityId,
     connectNote,
     dbEdges,
+    clearTransientConnectionPreview,
     supabase,
     userId,
     loadData,
@@ -1419,6 +1496,51 @@ function FriendGraphInner({
     loadData,
     showToast,
   ])
+
+  const saveCommunityEdit = useCallback(async () => {
+    const id = editCommunityId
+    const name = editCommunityName.trim()
+    const color = editCommunityColor
+    if (!id) return
+    if (!name) {
+      showToast('Community name is required.', 'error')
+      return
+    }
+
+    setSavingCommunityEdit(true)
+
+    const upsertPayload = {
+      id,
+      owner_id: userId,
+      name,
+      color,
+    }
+    const { error: constellationErr } = await supabase
+      .from('constellations')
+      .upsert(upsertPayload, { onConflict: 'id' })
+
+    // Backward compatibility with existing schema using "communities".
+    if (constellationErr) {
+      const { error: fallbackErr } = await supabase
+        .from('communities')
+        .update({ name, color })
+        .eq('owner_id', userId)
+        .eq('id', id)
+      if (fallbackErr) {
+        setSavingCommunityEdit(false)
+        showToast(fallbackErr.message || 'Failed to update community.', 'error')
+        return
+      }
+    }
+
+    setCommunities((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, name, color } : c))
+    )
+    setEditCommunityOpen(false)
+    setEditCommunityId(null)
+    setSavingCommunityEdit(false)
+    showToast('Community updated ✓', 'success')
+  }, [editCommunityId, editCommunityName, editCommunityColor, supabase, userId, showToast])
 
   const setMainPhoto = useCallback(
     async (photo: NodePhotoRow) => {
@@ -1514,6 +1636,7 @@ function FriendGraphInner({
       if (!selectedPerson) return
       if (!NODE_IMAGE_TYPES.includes(file.type as (typeof NODE_IMAGE_TYPES)[number])) {
         showToast('Please choose a JPEG, PNG, or WebP image.', 'error')
+        setAvatarPickerActive(false)
         return
       }
       const personId = selectedPerson.id
@@ -1529,6 +1652,7 @@ function FriendGraphInner({
 
       if (upErr) {
         setAvatarUploading(false)
+        setAvatarPickerActive(false)
         showToast(upErr.message, 'error')
         return
       }
@@ -1546,6 +1670,7 @@ function FriendGraphInner({
       })
       if (iErr) {
         setAvatarUploading(false)
+        setAvatarPickerActive(false)
         showToast(iErr.message, 'error')
         return
       }
@@ -1559,6 +1684,7 @@ function FriendGraphInner({
       }
       await loadNodePhotos(personId)
       setAvatarUploading(false)
+      setAvatarPickerActive(false)
       showToast('Photo uploaded.', 'success')
     },
     [
@@ -1591,66 +1717,42 @@ function FriendGraphInner({
     [supabase, userId, loadData]
   )
 
-  const submitNewPerson = useCallback(async () => {
+  const createDraftPersonAndOpenPanel = useCallback(async () => {
     setSubmitErr(null)
-    const name = newName.trim()
-    if (!name) {
-      setSubmitErr('Name is required.')
-      return
-    }
-    let locId = newLocationId
-    if (addLocInline.trim()) {
-      const id = await addLocation(addLocInline)
-      if (!id) return
-      locId = id
-      setAddLocInline('')
-    }
+    const locId = locations[0]?.id ?? null
     if (!locId) {
-      setSubmitErr('Choose a location or add a new one.')
+      setSubmitErr('Add a location first, then try again.')
       return
     }
     const group = people.filter((p) => p.location_id === locId)
     const pos = scatterPersonInGroup(group.length, group.length + 1)
-    const custom = rowsToCustomAttributes(newCustomRows)
     const { data: inserted, error: insErr } = await supabase
       .from('nodes')
       .insert({
         owner_id: userId,
-        name,
+        name: 'New person',
         location_id: locId,
-        relationship: newRel,
-        things_to_remember: newNotes,
-        custom_attributes: custom,
+        relationship: 'friend',
+        things_to_remember: '',
+        custom_attributes: {},
         position_x: pos.x,
         position_y: pos.y,
       })
-      .select('id')
+      .select(
+        'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self,created_at'
+      )
       .single()
     if (insErr) {
-      setSubmitErr(insErr.message)
+      setSubmitErr(insErr.message || 'Failed to create person.')
       return
     }
-    setAddPersonOpen(false)
-    setNewName('')
-    setNewLocationId('')
-    setNewRel('friend')
-    setNewNotes('')
-    setNewCustomRows([{ key: '', value: '' }])
-    setHighlightId(inserted?.id as string)
+    const nid = inserted?.id as string
+    if (nid) setHighlightId(nid)
     await loadData()
-  }, [
-    newName,
-    newLocationId,
-    newRel,
-    newNotes,
-    newCustomRows,
-    addLocInline,
-    people,
-    supabase,
-    userId,
-    addLocation,
-    loadData,
-  ])
+    const created = people.find((p) => p.id === nid) ?? null
+    // After reload, select from fresh people list (fallback to minimal selection if not found).
+    setSelectedPerson(created ?? { ...(inserted as any), is_self: false })
+  }, [locations, people, supabase, userId, loadData])
 
   const confirmPendingEdge = useCallback(async () => {
     if (!pendingConn) return
@@ -1688,6 +1790,7 @@ function FriendGraphInner({
       },
     ])
     if (e) setError(e.message)
+    clearTransientConnectionPreview()
     setPendingConn(null)
     setPendingCommunityId(null)
     setPendingRelationTags([])
@@ -1699,6 +1802,7 @@ function FriendGraphInner({
     pendingRelationTags,
     pendingLabelNote,
     dbEdges,
+    clearTransientConnectionPreview,
     supabase,
     userId,
     loadData,
@@ -1825,7 +1929,11 @@ function FriendGraphInner({
         </div>
       ) : null}
       {hint}
-      <div className="relative min-h-0 w-full flex-1">
+      <div
+        className={`relative min-h-0 w-full flex-1 ${
+          constellationMode ? 'bg-zinc-950' : ''
+        }`}
+      >
       {assignCommunityId ? (
         <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-zinc-300/80 bg-background/95 px-3 py-1 text-xs text-zinc-700 shadow dark:border-zinc-700 dark:text-zinc-300">
           Click nodes to add/remove from{' '}
@@ -1843,7 +1951,7 @@ function FriendGraphInner({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onConnect={onConnect}
-        connectionMode={ConnectionMode.Strict}
+        connectionMode={ConnectionMode.Loose}
         nodesConnectable={shiftHeld}
         elementsSelectable
         onNodeClick={(_, n) => {
@@ -1866,6 +1974,7 @@ function FriendGraphInner({
           setNodeContextMenu(null)
           setLocationLineTooltip(null)
           setSelectedCommunityId(null)
+          setHoverCommunityId(null)
           setGraphHighlight({ kind: 'none' })
           setSelectedPerson(null)
           setSelectedEdge(null)
@@ -1897,7 +2006,7 @@ function FriendGraphInner({
         fitView
         minZoom={0.35}
         maxZoom={1.4}
-        className={`touch-none h-full w-full bg-zinc-50/50 dark:bg-zinc-950/40 ${
+        className={`touch-none h-full w-full bg-zinc-50 dark:bg-[#0a0a0f] ${
           assignCommunityId ? 'cursor-crosshair' : ''
         }`}
       >
@@ -1918,10 +2027,13 @@ function FriendGraphInner({
             }}
           />
         ) : null}
+        {constellationMode && constellationPairs.length > 0 ? (
+          <ConstellationOverlay memberIds={constellationMemberIds} pairs={constellationPairs} />
+        ) : null}
         {selectedCommunityId && communityOverlayPairs.length > 0 ? (
           <CommunityConnectOverlay
             pairs={communityOverlayPairs}
-            stroke={selectedCommunityHex}
+            stroke={activeConstellationHex}
           />
         ) : null}
         <Controls showInteractive={false} />
@@ -1938,8 +2050,8 @@ function FriendGraphInner({
           name: c.name,
           color: c.color,
         }))}
-        activeCommunityKey={selectedCommunityId}
-        assignCommunityId={assignCommunityId}
+        activeCommunityKey={activeConstellationId}
+        onHoverCommunity={(key) => setHoverCommunityId(key)}
         onPickCommunity={(key) => {
           const normalizedKey =
             key === NO_COMMUNITY_KEY
@@ -1947,6 +2059,7 @@ function FriendGraphInner({
               : normalizeCommunityId(key) ?? NO_COMMUNITY_KEY
           if (selectedCommunityId === normalizedKey) {
             setSelectedCommunityId(null)
+            setHoverCommunityId(null)
             setGraphHighlight({ kind: 'none' })
             setSelectedPerson(null)
             setSelectedEdge(null)
@@ -1963,8 +2076,11 @@ function FriendGraphInner({
             eds.map((edge) => ({ ...edge, selected: false }))
           )
         }}
-        onToggleAssignCommunity={(communityId) => {
-          setAssignCommunityId((prev) => (prev === communityId ? null : communityId))
+        onEditCommunity={(community) => {
+          setEditCommunityId(community.id)
+          setEditCommunityName(community.name)
+          setEditCommunityColor(community.color)
+          setEditCommunityOpen(true)
           setNodeContextMenu(null)
         }}
         onNewCommunity={() => {
@@ -2035,9 +2151,7 @@ function FriendGraphInner({
         <button
           type="button"
           onClick={() => {
-            setAddPersonOpen(true)
-            setSubmitErr(null)
-            setNewLocationId(locations[0]?.id ?? '')
+            void createDraftPersonAndOpenPanel()
           }}
           className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-background shadow-lg"
         >
@@ -2072,131 +2186,6 @@ function FriendGraphInner({
           Refresh
         </button>
       </div>
-
-      {addPersonOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
-          <div
- role="dialog"
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-200 bg-background p-6 shadow-xl dark:border-zinc-700"
-          >
-            <h2 className="text-lg font-semibold">Add person</h2>
-            {submitErr ? (
-              <p className="mt-2 text-sm text-red-600" role="alert">
-                {submitErr}
-              </p>
-            ) : null}
-            <div className="mt-4 flex flex-col gap-3">
-              <label className="text-sm font-medium">Name</label>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-              />
-              <label className="text-sm font-medium">Location</label>
-              <select
-                value={newLocationId}
-                onChange={(e) => setNewLocationId(e.target.value)}
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-              >
-                <option value="">Select…</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-              <div className="flex gap-2">
-                <input
-                  placeholder="New location name"
-                  value={addLocInline}
-                  onChange={(e) => setAddLocInline(e.target.value)}
-                  className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-                />
-              </div>
-              <label className="text-sm font-medium">Relationship</label>
-              <div className="flex flex-wrap gap-1.5">
-                {RELATIONSHIP_VALUES.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setNewRel(r)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium ${
-                      newRel === r
-                        ? 'bg-foreground text-background'
-                        : 'border border-zinc-300 dark:border-zinc-600'
-                    }`}
-                  >
-                    {relationshipTitle(r)}
-                  </button>
-                ))}
-              </div>
-              <label className="text-sm font-medium">Things to remember</label>
-              <textarea
-                value={newNotes}
-                onChange={(e) => setNewNotes(e.target.value)}
-                rows={3}
-                className="resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-              />
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Custom fields</span>
-                <button
-                  type="button"
-                  className="text-xs underline"
-                  onClick={() =>
-                    setNewCustomRows((r) => [...r, { key: '', value: '' }])
-                  }
-                >
-                  + Add field
-                </button>
-              </div>
-              {newCustomRows.map((row, i) => (
-                <div key={i} className="flex gap-2">
-                  <input
-                    placeholder="Label"
-                    value={row.key}
-                    onChange={(e) =>
-                      setNewCustomRows((rows) =>
-                        rows.map((x, j) =>
-                          j === i ? { ...x, key: e.target.value } : x
-                        )
-                      )
-                    }
-                    className="w-2/5 rounded-md border px-2 py-1 text-xs dark:border-zinc-600"
-                  />
-                  <input
-                    placeholder="Value"
-                    value={row.value}
-                    onChange={(e) =>
-                      setNewCustomRows((rows) =>
-                        rows.map((x, j) =>
-                          j === i ? { ...x, value: e.target.value } : x
-                        )
-                      )
-                    }
-                    className="min-w-0 flex-1 rounded-md border px-2 py-1 text-xs dark:border-zinc-600"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="mt-6 flex gap-2">
-              <button
-                type="button"
-                className="flex-1 rounded-md bg-foreground py-2 text-sm font-medium text-background"
-                onClick={() => void submitNewPerson()}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                className="rounded-md border px-4 py-2 text-sm dark:border-zinc-600"
-                onClick={() => setAddPersonOpen(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {addConnectionOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
@@ -2465,169 +2454,34 @@ function FriendGraphInner({
         </div>
       ) : null}
 
-      {selectedPerson ? (
-        <aside className="fixed top-16 right-0 bottom-0 z-30 flex w-72 sm:w-80 flex-col border-l border-zinc-200 bg-background shadow-2xl dark:border-zinc-800">
-          <div className="border-b p-3 dark:border-zinc-800">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                className="text-2xl leading-none text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
-                onClick={() => {
-                  setSelectedCommunityId(null)
-                  setGraphHighlight({ kind: 'none' })
-                  setSelectedPerson(null)
-                }}
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <div className="mt-1 flex flex-col items-center gap-2 sm:flex-row sm:items-start">
-              <div className="relative shrink-0">
-                <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                  {selectedPerson.avatar_url ? (
-                    <Image
-                      src={selectedPerson.avatar_url}
-                      alt=""
-                      width={80}
-                      height={80}
-                      className="h-full w-full object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <span className="text-2xl font-bold text-zinc-700 dark:text-zinc-200">
-                      {personDisplayInitial(panelName || selectedPerson.name)}
-                    </span>
-                  )}
-                  {avatarUploading ? (
-                    <div
-                      className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-[1px]"
-                      aria-busy
-                    >
-                      <span
-                        className="h-7 w-7 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500"
-                        role="status"
-                      />
-                    </div>
-                  ) : null}
-                  <label className="absolute -bottom-0.5 -right-0.5 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-2 border-background bg-foreground text-background shadow-md transition hover:opacity-90">
-                    <span className="sr-only">Upload photo</span>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth={1.5}
-                      stroke="currentColor"
-                      className="h-4 w-4"
-                      aria-hidden
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574v6.176A2.25 2.25 0 004.5 18h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"
-                      />
-                    </svg>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      className="sr-only"
-                      disabled={avatarUploading}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0]
-                        e.target.value = ''
-                        if (f) void uploadNodePhoto(f)
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className="w-full flex-1 text-center sm:text-left">
-                <textarea
-                  value={panelName}
-                  onChange={(e) => setPanelName(e.target.value)}
-                  onBlur={() => {
-                    const nameTrim = panelName.trim()
-                    if (!nameTrim) {
-                      setPanelName(selectedPerson.name)
-                      return
-                    }
-                    if (nameTrim === selectedPerson.name) return
-                    void saveNodePatch(selectedPerson.id, { name: nameTrim })
-                  }}
-                  aria-label="Name"
-                  rows={2}
-                  className="mt-0.5 w-full resize-none border-b border-gray-300 bg-transparent px-1 py-0.5 text-base font-semibold text-foreground outline-none focus:border-blue-400 whitespace-normal break-words"
-                />
-                {panelRelationTags.length ? (
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {panelRelationTags.map((t) => (
-                      <span key={t} className={relationTagPillClass(t)}>
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">
-                    No relationship tags
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="mt-2 flex gap-2 overflow-x-auto py-1">
-              {panelPhotos.map((photo) => (
-                <button
-                  key={photo.id}
-                  type="button"
-                  className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700"
-                  onClick={() => setPhotoLightbox(photo)}
-                >
-                  <Image
-                    src={photo.url}
-                    alt=""
-                    width={56}
-                    height={56}
-                    className="h-full w-full object-cover"
-                    unoptimized
-                  />
-                  {photo.is_primary ? (
-                    <span className="absolute right-1 top-1 rounded bg-black/70 px-1 text-[10px] text-white">
-                      Main
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-              <button
-                type="button"
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-300 text-xs text-zinc-600 dark:border-zinc-600 dark:text-zinc-400"
-                disabled={avatarUploading}
-                onClick={() => addPhotoInputRef.current?.click()}
-              >
-                {avatarUploading ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500" />
-                ) : (
-                  '+ Add Photo'
-                )}
-              </button>
-              <input
-                ref={addPhotoInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  e.target.value = ''
-                  if (f) void uploadNodePhoto(f)
-                }}
-              />
-            </div>
-            <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700" />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">
+      <NodeDetailPanel
+        open={Boolean(selectedPerson)}
+        node={selectedPerson}
+        onClose={() => {
+          setSelectedCommunityId(null)
+          setGraphHighlight({ kind: 'none' })
+          setSelectedPerson(null)
+        }}
+        avatarPickerActive={avatarPickerActive}
+        setAvatarPickerActive={setAvatarPickerActive}
+        avatarUploading={avatarUploading}
+        uploadNodePhoto={(f) => void uploadNodePhoto(f)}
+        panelName={panelName}
+        setPanelName={setPanelName}
+        personDisplayInitial={personDisplayInitial}
+        panelRelationTags={panelRelationTags}
+        relationTagPillClass={relationTagPillClass}
+        panelPhotos={panelPhotos}
+        setPhotoLightbox={setPhotoLightbox}
+        addPhotoInputRef={addPhotoInputRef}
+        panelSaveState={panelSaveState}
+        panelErr={panelErr}
+        panelSaving={panelSaving}
+        canDelete={Boolean(selectedPerson && !selectedPerson.is_self)}
+        onDelete={() => void deletePerson()}
+      >
+        {selectedPerson ? (
+          <>
             <div>
               <label className="text-xs uppercase tracking-wide text-gray-400">Location</label>
               <input
@@ -3031,33 +2885,11 @@ function FriendGraphInner({
               </ul>
             </div>
             {panelErr ? (
-              <p className="text-sm text-red-600" role="alert">
-                {panelErr}
-              </p>
+              <></>
             ) : null}
-          </div>
-          <div className="border-t p-3 dark:border-zinc-800 space-y-2">
-            {panelSaveState === 'saved' ? (
-              <p className="text-xs text-zinc-500 transition-opacity duration-300">
-                Saved ✓
-              </p>
-            ) : null}
-            {panelSaveState === 'error' ? (
-              <p className="text-xs text-red-600">Failed to save</p>
-            ) : null}
-            {!selectedPerson.is_self ? (
-              <button
-                type="button"
-                disabled={panelSaving}
-                className="w-full rounded-md border border-red-200 py-1 text-sm text-red-700 dark:border-red-900 disabled:opacity-40"
-                onClick={() => void deletePerson()}
-              >
-                Delete person
-              </button>
-            ) : null}
-          </div>
-        </aside>
-      ) : null}
+          </>
+        ) : null}
+      </NodeDetailPanel>
 
       {photoLightbox ? (
         <div
@@ -3090,6 +2922,60 @@ function FriendGraphInner({
                 onClick={() => void deletePhoto(photoLightbox)}
               >
                 Delete Photo
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editCommunityOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div
+            className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-background p-6 shadow-xl dark:border-zinc-700"
+            role="dialog"
+            aria-labelledby="edit-community-title"
+          >
+            <h3 id="edit-community-title" className="font-semibold">
+              Edit community
+            </h3>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              Update the community name and colour used across the graph.
+            </p>
+            <label htmlFor="edit-comm-name" className="mt-4 block text-sm font-medium">
+              Name
+            </label>
+            <input
+              id="edit-comm-name"
+              value={editCommunityName}
+              onChange={(e) => setEditCommunityName(e.target.value)}
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
+              placeholder="e.g. Work, Family"
+            />
+            <label htmlFor="edit-comm-color" className="mt-3 block text-sm font-medium">
+              Colour
+            </label>
+            <input
+              id="edit-comm-color"
+              type="color"
+              value={editCommunityColor}
+              onChange={(e) => setEditCommunityColor(e.target.value)}
+              className="mt-1 h-11 w-full cursor-pointer rounded-md border border-zinc-300 bg-background dark:border-zinc-600"
+            />
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                disabled={savingCommunityEdit}
+                className="flex-1 rounded-md bg-foreground py-2 text-sm font-medium text-background disabled:opacity-50"
+                onClick={() => void saveCommunityEdit()}
+              >
+                {savingCommunityEdit ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button"
+                className="rounded-md border px-4 py-2 text-sm dark:border-zinc-600"
+                onClick={() => setEditCommunityOpen(false)}
+              >
+                Cancel
               </button>
             </div>
           </div>

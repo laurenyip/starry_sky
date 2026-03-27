@@ -13,6 +13,37 @@ export function Navbar() {
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [logoutError, setLogoutError] = useState<string | null>(null)
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('theme')
+      const prefersDark =
+        window.matchMedia &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+      const next: 'light' | 'dark' =
+        saved === 'dark' || saved === 'light'
+          ? (saved as 'light' | 'dark')
+          : prefersDark
+            ? 'dark'
+            : 'light'
+      setTheme(next)
+      document.documentElement.classList.toggle('dark', next === 'dark')
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  function toggleTheme() {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    try {
+      localStorage.setItem('theme', next)
+    } catch {
+      // ignore
+    }
+    document.documentElement.classList.toggle('dark', next === 'dark')
+  }
 
   useEffect(() => {
     if (!supabase) return
@@ -83,6 +114,53 @@ export function Navbar() {
           </Link>
 
         <nav className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 text-xs sm:gap-4 sm:text-sm">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-background/60 text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            {theme === 'dark' ? (
+              // Moon
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                className="h-4.5 w-4.5"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21.752 15.002A9.718 9.718 0 0 1 12.003 21C6.477 21 2 16.523 2 11c0-4.556 3.04-8.402 7.221-9.62.35-.102.67.207.586.556A8 8 0 0 0 21.196 14.42c.35-.084.66.236.556.582Z"
+                />
+              </svg>
+            ) : (
+              // Sun
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                className="h-4.5 w-4.5"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 3v1.5M12 19.5V21M4.5 12H3M21 12h-1.5M6.22 6.22 5.16 5.16M18.84 18.84l-1.06-1.06M17.78 6.22l1.06-1.06M5.16 18.84l1.06-1.06"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
+                />
+              </svg>
+            )}
+          </button>
           {session ? (
             <>
               <Link

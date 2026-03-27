@@ -37,7 +37,8 @@ export function applyGraphEdgeHighlights(
   edges: Edge[],
   state: GraphHighlightState,
   selectedEdgeId: string | null | undefined,
-  communityHighlight?: CommunityHighlightOpts | null
+  communityHighlight?: CommunityHighlightOpts | null,
+  opts?: { starMapMode?: boolean } | null
 ): Edge[] {
   return edges.map((e) => {
     const base = baseStrokeOf(e)
@@ -52,13 +53,13 @@ export function applyGraphEdgeHighlights(
       const sid = communityHighlight.selectedCommunityId
       const match = commKey === sid
       if (match) {
-        stroke = communityHighlight.selectedCommunityHex
+        stroke = opts?.starMapMode ? 'rgba(255,255,255,0.65)' : communityHighlight.selectedCommunityHex
         strokeWidth = 1.5
         opacity = 1
       } else {
-        stroke = NEUTRAL
+        stroke = opts?.starMapMode ? '#050505' : NEUTRAL
         strokeWidth = 0.5
-        opacity = 0.1
+        opacity = opts?.starMapMode ? 0.08 : 0.1
       }
     } else if (state.kind === 'node') {
       const incident = e.source === state.nodeId || e.target === state.nodeId

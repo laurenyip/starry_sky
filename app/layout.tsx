@@ -43,6 +43,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme');var d=t? t==='dark' : window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList; if(d) c.add('dark'); else c.remove('dark');}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="flex min-h-dvh flex-col bg-background font-sans text-foreground">
         <SupabaseProvider>
           <ToastProvider>
