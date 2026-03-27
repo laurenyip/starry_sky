@@ -4,18 +4,25 @@ import { NO_COMMUNITY_KEY } from '@/lib/edge-highlight'
 import { DEFAULT_EDGE_NEUTRAL } from '@/lib/flow-build'
 
 export type CommunityRow = { id: string; name: string; color: string }
+export type LocationLegendRow = { id: string; name: string; count: number }
 
 export function CommunitiesLegend({
   communities,
   activeCommunityKey,
+  activeLocationId,
+  locations,
   onPickCommunity,
+  onPickLocation,
   onEditCommunity,
   onHoverCommunity,
   onNewCommunity,
 }: {
   communities: CommunityRow[]
   activeCommunityKey: string | null
+  activeLocationId: string | null
+  locations: LocationLegendRow[]
   onPickCommunity: (key: string) => void
+  onPickLocation: (locationId: string) => void
   onEditCommunity: (community: CommunityRow) => void
   onHoverCommunity?: (key: string | null) => void
   onNewCommunity: () => void
@@ -90,6 +97,33 @@ export function CommunitiesLegend({
       >
         + New community
       </button>
+
+      <div className="my-3 h-px bg-zinc-200/80 dark:bg-zinc-700/80" />
+
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+        Locations
+      </p>
+      <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto">
+        {locations.map((loc) => (
+          <li key={loc.id}>
+            <button
+              type="button"
+              onClick={() => onPickLocation(loc.id)}
+              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+                activeLocationId === loc.id
+                  ? 'bg-zinc-200/80 dark:bg-zinc-700/80'
+                  : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              <span className="text-zinc-500">📍</span>
+              <span className="flex-1 truncate">{loc.name}</span>
+              <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                {loc.count}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

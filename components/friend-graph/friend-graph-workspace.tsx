@@ -392,6 +392,7 @@ function FriendGraphInner({
     null
   )
   const [hoverCommunityId, setHoverCommunityId] = useState<string | null>(null)
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
 
   const [addConnectionOpen, setAddConnectionOpen] = useState(false)
   const [connectPersonAId, setConnectPersonAId] = useState('')
@@ -557,9 +558,10 @@ function FriendGraphInner({
   )
 
   const activeConstellationId = useMemo(() => {
+    if (selectedLocationId) return null
     const key = hoverCommunityId ?? selectedCommunityId
     return key
-  }, [hoverCommunityId, selectedCommunityId])
+  }, [hoverCommunityId, selectedCommunityId, selectedLocationId])
 
   const activeConstellationHex = useMemo(() => {
     if (!activeConstellationId) return DEFAULT_EDGE_NEUTRAL
@@ -567,6 +569,17 @@ function FriendGraphInner({
     const cid = normalizeCommunityId(activeConstellationId)
     return (cid ? communityColorMap.get(cid) : null) ?? DEFAULT_EDGE_NEUTRAL
   }, [activeConstellationId, communityColorMap])
+
+  const locationRowsForLegend = useMemo(() => {
+    return locations
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        count: people.filter((p) => p.location_id === l.id).length,
+      }))
+      .filter((x) => x.count > 0)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [locations, people])
 
   /** Join-order chain for dashed overlay lines (not stored in DB). */
   const communityOverlayPairs = useMemo(() => {
@@ -641,13 +654,27 @@ function FriendGraphInner({
     return out
   }, [activeConstellationId, nodeCommunityMap, people])
 
+  const memberSetForLocation = useMemo(() => {
+    if (!selectedLocationId) return null
+    const out = new Set<string>()
+    for (const p of people) {
+      if (p.location_id === selectedLocationId) out.add(p.id)
+    }
+    return out
+  }, [selectedLocationId, people])
+
   const constellationMode = Boolean(
     activeConstellationId && activeConstellationId !== NO_COMMUNITY_KEY
   )
+  const locationMode = Boolean(selectedLocationId)
 
   const constellationMemberIds = useMemo(
     () => (memberSetForConstellation ? [...memberSetForConstellation] : []),
     [memberSetForConstellation]
+  )
+  const locationMemberIds = useMemo(
+    () => (memberSetForLocation ? [...memberSetForLocation] : []),
+    [memberSetForLocation]
   )
 
   const constellationPairs = useMemo(() => {
@@ -681,11 +708,12 @@ function FriendGraphInner({
   }, [activeConstellationId, activeConstellationHex])
 
   const nodesForFlow = useMemo(() => {
-    if (!memberSetForConstellation) return initialNodes
-    const glowHex = activeConstellationHex
+    const activeSet = locationMode ? memberSetForLocation : memberSetForConstellation
+    if (!activeSet) return initialNodes
+    const glowHex = locationMode ? '#fbbf24' : activeConstellationHex
     return initialNodes.map((n) => {
       if (n.type !== 'person') return n
-      const inSet = memberSetForConstellation.has(n.id)
+      const inSet = activeSet.has(n.id)
       const baseData = (n.data ?? {}) as Record<string, unknown>
       const memberCommunityIds = nodeCommunityMap.get(n.id) ?? []
       const memberDots = memberCommunityIds
@@ -695,19 +723,21 @@ function FriendGraphInner({
         ...n,
         style: {
           ...n.style,
-          opacity: inSet ? 1 : constellationMode ? 0.08 : 0.15,
+          opacity: inSet ? 1 : locationMode || constellationMode ? 0.1 : 0.15,
           transition: 'opacity 0.28s ease',
         },
         data: {
           ...baseData,
           communityMemberGlowHex: inSet ? glowHex : null,
-          constellationMode,
+          constellationMode: inSet ? (constellationMode || locationMode) : false,
           communityColorDots: memberDots,
         },
       }
     })
   }, [
     initialNodes,
+    locationMode,
+    memberSetForLocation,
     memberSetForConstellation,
     activeConstellationHex,
     constellationMode,
@@ -2066,6 +2096,7 @@ function FriendGraphInner({
           setLocationLineTooltip(null)
           setSelectedCommunityId(null)
           setHoverCommunityId(null)
+          setSelectedLocationId(null)
           setGraphHighlight({ kind: 'none' })
           setSelectedPerson(null)
           setSelectedEdge(null)
@@ -2120,6 +2151,9 @@ function FriendGraphInner({
         {constellationMode && constellationPairs.length > 0 ? (
           <ConstellationOverlay memberIds={constellationMemberIds} pairs={constellationPairs} />
         ) : null}
+        {locationMode && locationMemberIds.length > 0 ? (
+          <ConstellationOverlay memberIds={locationMemberIds} pairs={[]} />
+        ) : null}
         {selectedCommunityId && communityOverlayPairs.length > 0 ? (
           <CommunityConnectOverlay
             pairs={communityOverlayPairs}
@@ -2141,8 +2175,11 @@ function FriendGraphInner({
           color: c.color,
         }))}
         activeCommunityKey={activeConstellationId}
+        activeLocationId={selectedLocationId}
+        locations={locationRowsForLegend}
         onHoverCommunity={(key) => setHoverCommunityId(key)}
         onPickCommunity={(key) => {
+          setSelectedLocationId(null)
           const normalizedKey =
             key === NO_COMMUNITY_KEY
               ? NO_COMMUNITY_KEY
@@ -2165,6 +2202,15 @@ function FriendGraphInner({
           setEdges((eds) =>
             eds.map((edge) => ({ ...edge, selected: false }))
           )
+        }}
+        onPickLocation={(locationId) => {
+          setHoverCommunityId(null)
+          setSelectedCommunityId(null)
+          setSelectedPerson(null)
+          setSelectedEdge(null)
+          setGraphHighlight({ kind: 'none' })
+          setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
+          setSelectedLocationId((prev) => (prev === locationId ? null : locationId))
         }}
         onEditCommunity={(community) => {
           setEditCommunityId(community.id)
