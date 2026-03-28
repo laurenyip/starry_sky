@@ -58,7 +58,11 @@ type LoadOk = {
   ok: true
   username: string
   profileAvatarUrl: string | null
-  graphData: PublicGraphPayload
+  /** When false, graph is hidden; graphData is null. */
+  isPublic: boolean
+  /** Nodes excluding the self / “You” node. */
+  connectionCount: number
+  graphData: PublicGraphPayload | null
   usedServiceRole: boolean
   fetchError: PostgrestError | null
 }
@@ -87,7 +91,7 @@ async function loadProfileAndGraph(
 
   const { data: profile, error: profileError } = await anon
     .from('profiles')
-    .select('id, username, avatar_url')
+    .select('id, username, avatar_url, is_public')
     .eq('username', username)
     .maybeSingle()
 
@@ -96,6 +100,25 @@ async function loadProfileAndGraph(
   }
   if (!profile) {
     return { ok: false, kind: 'not_found' }
+  }
+
+  const rawAv = (profile as { avatar_url?: unknown }).avatar_url
+  const profileAvatarUrl =
+    rawAv == null || rawAv === '' ? null : String(rawAv)
+
+  const isPublic = (profile as { is_public?: boolean | null }).is_public !== false
+
+  if (!isPublic) {
+    return {
+      ok: true,
+      username: profile.username as string,
+      profileAvatarUrl,
+      isPublic: false,
+      connectionCount: 0,
+      graphData: null,
+      usedServiceRole: false,
+      fetchError: null,
+    }
   }
 
   const service = createServiceRoleClient()
@@ -194,14 +217,14 @@ async function loadProfileAndGraph(
     communityColors,
   }
 
-  const rawAv = (profile as { avatar_url?: unknown }).avatar_url
-  const profileAvatarUrl =
-    rawAv == null || rawAv === '' ? null : String(rawAv)
+  const connectionCount = people.filter((p) => !p.is_self).length
 
   return {
     ok: true,
     username: profile.username as string,
     profileAvatarUrl,
+    isPublic: true,
+    connectionCount,
     graphData,
     usedServiceRole: Boolean(service),
     fetchError: fetchErr,
@@ -233,6 +256,8 @@ export default async function PublicProfilePage({ params }: PageProps) {
   const {
     username: displayUsername,
     profileAvatarUrl,
+    isPublic,
+    connectionCount,
     graphData,
     usedServiceRole,
     fetchError,
@@ -240,53 +265,65 @@ export default async function PublicProfilePage({ params }: PageProps) {
 
   const headerInitial = displayUsername.slice(0, 1).toUpperCase()
 
+  if (!isPublic) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center px-4 py-20">
+        <p className="text-center text-lg font-medium text-foreground">
+          This graph is private.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-zinc-200 bg-background/90 px-4 py-5 dark:border-zinc-800 sm:px-6 sm:py-6">
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-5">
-          <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+      <div className="shrink-0 border-b border-zinc-200 bg-background/90 px-4 py-6 dark:border-zinc-800 sm:px-6">
+        <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
+          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-zinc-200 bg-zinc-200/80 dark:border-zinc-600 dark:bg-zinc-700">
             {profileAvatarUrl ? (
               <Image
                 src={profileAvatarUrl}
                 alt=""
-                width={96}
-                height={96}
+                width={80}
+                height={80}
                 className="h-full w-full object-cover"
                 unoptimized
               />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-3xl font-semibold text-zinc-500 dark:text-zinc-400">
+              <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-zinc-600 dark:text-zinc-300">
                 {headerInitial}
               </span>
             )}
           </div>
-          <div className="min-w-0 text-center sm:text-left">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              {displayUsername}&apos;s Friend Graph
-            </h1>
-            {fetchError && !usedServiceRole ? (
-              <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">
-                Graph data could not be loaded. Set{' '}
-                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                  SUPABASE_SERVICE_ROLE_KEY
-                </code>{' '}
-                in{' '}
-                <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                  .env.local
-                </code>{' '}
-                (server-only; never use it in client code).
-              </p>
-            ) : fetchError ? (
-              <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">
-                {fetchError.message}
-              </p>
-            ) : null}
-          </div>
+          <h1 className="mt-4 text-xl font-semibold tracking-tight text-foreground">
+            {displayUsername}
+          </h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            {connectionCount}{' '}
+            {connectionCount === 1 ? 'connection' : 'connections'}
+          </p>
+          {fetchError && !usedServiceRole ? (
+            <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
+              Graph data could not be loaded. Set{' '}
+              <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
+                SUPABASE_SERVICE_ROLE_KEY
+              </code>{' '}
+              in{' '}
+              <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
+                .env.local
+              </code>{' '}
+              (server-only; never use it in client code).
+            </p>
+          ) : fetchError ? (
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+              {fetchError.message}
+            </p>
+          ) : null}
         </div>
       </div>
 
       <div className="flex min-h-0 min-h-[50vh] flex-1 flex-col px-2 pb-4 pt-2 sm:px-4">
-        <PublicProfileGraph graphData={graphData} />
+        {graphData ? <PublicProfileGraph graphData={graphData} /> : null}
       </div>
     </div>
   )

@@ -1,5 +1,6 @@
 'use client'
 
+import { Logo } from '@/components/Logo'
 import { LoadingSpinner } from '@/components/loading-spinner'
 import { useSupabaseContext } from '@/components/supabase-provider'
 import Link from 'next/link'
@@ -61,7 +62,10 @@ export default function LoginPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-4 py-16">
-      <h1 className="text-center text-xl font-semibold tracking-tight text-foreground">
+      <div className="flex justify-center">
+        <Logo />
+      </div>
+      <h1 className="mt-8 text-center text-xl font-semibold tracking-tight text-foreground">
         Log in
       </h1>
       <p className="mt-1 text-center text-sm text-zinc-600 dark:text-zinc-400">

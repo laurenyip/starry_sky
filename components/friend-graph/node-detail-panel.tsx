@@ -18,10 +18,8 @@ export function NodeDetailPanel(props: {
   panelRelationTags: string[]
   relationTagPillClass: (tag: string) => string
 
-  // Photo strip + lightbox
-  panelPhotos: any[]
-  setPhotoLightbox: (p: any | null) => void
-  addPhotoInputRef: React.RefObject<HTMLInputElement | null>
+  /** Multi-photo gallery (replaces legacy strip + lightbox). */
+  photoGallery: React.ReactNode
 
   // Body
   children: React.ReactNode
@@ -48,9 +46,7 @@ export function NodeDetailPanel(props: {
     personDisplayInitial,
     panelRelationTags,
     relationTagPillClass,
-    panelPhotos,
-    setPhotoLightbox,
-    addPhotoInputRef,
+    photoGallery,
     children,
     panelSaveState,
     panelErr,
@@ -157,7 +153,7 @@ export function NodeDetailPanel(props: {
                 </svg>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/*"
                   className="sr-only"
                   disabled={avatarUploading}
                   onClick={() => setAvatarPickerActive(true)}
@@ -195,53 +191,7 @@ export function NodeDetailPanel(props: {
           </div>
         </div>
 
-        <div className="mt-2 flex gap-2 overflow-x-auto py-1">
-          {panelPhotos.map((photo) => (
-            <button
-              key={photo.id}
-              type="button"
-              className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700"
-              onClick={() => setPhotoLightbox(photo)}
-            >
-              <Image
-                src={photo.url}
-                alt=""
-                width={56}
-                height={56}
-                className="h-full w-full object-cover"
-                unoptimized
-              />
-              {photo.is_primary ? (
-                <span className="absolute right-1 top-1 rounded bg-black/70 px-1 text-[10px] text-white">
-                  Main
-                </span>
-              ) : null}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-zinc-300 text-xs text-zinc-600 dark:border-zinc-600 dark:text-zinc-400"
-            disabled={avatarUploading}
-            onClick={() => addPhotoInputRef.current?.click()}
-          >
-            {avatarUploading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500" />
-            ) : (
-              '+ Add Photo'
-            )}
-          </button>
-          <input
-            ref={addPhotoInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              e.target.value = ''
-              if (f) uploadNodePhoto(f)
-            }}
-          />
-        </div>
+        {photoGallery}
         <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700" />
       </div>
 

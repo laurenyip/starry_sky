@@ -1,11 +1,15 @@
 'use client'
 
 import { useToast } from '@/components/toast-provider'
+import { DateAttributeField } from '@/components/friend-graph/date-attribute-field'
 import { CommunityConnectOverlay } from '@/components/friend-graph/community-connect-overlay'
+import { ShareGraphModal } from '@/components/share-graph-modal'
 import { CommunitiesLegend } from '@/components/friend-graph/communities-legend'
 import { ConstellationOverlay } from '@/components/friend-graph/constellation-overlay'
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
 import { NodeDetailPanel } from '@/components/friend-graph/node-detail-panel'
+import { NodePhotoGallery } from '@/components/friend-graph/node-photo-gallery'
+import { NodesListView } from '@/components/friend-graph/nodes-list-view'
 import { PersonNode } from '@/components/friend-graph/person-node'
 import {
   dedupeEdgesForGraph,
@@ -26,6 +30,10 @@ import {
 } from '@/lib/flow-build'
 import { formatRelativeTime } from '@/lib/format-relative-time'
 import {
+  getDateFieldType,
+  normalizeAttributeValueForKey,
+} from '@/lib/date-attribute-helpers'
+import {
   customAttributesToRows,
   parseCustomAttributes,
   RELATIONSHIP_VALUES,
@@ -34,6 +42,7 @@ import {
   scatterPersonInGroup,
   type RelationshipKind,
 } from '@/lib/graph-model'
+import { uploadNodeGalleryPhoto } from '@/lib/node-photo-ops'
 import {
   relationTypeToBorderColor,
 } from '@/lib/relation-type-colors'
@@ -70,15 +79,6 @@ type NodeCommunityRow = {
   community_id: string
   joined_at: string | null
 }
-type NodePhotoRow = {
-  id: string
-  owner_id: string
-  node_id: string
-  url: string
-  is_primary: boolean
-  uploaded_at: string
-}
-
 function formatSupabaseSchemaError(messages: string[]): string {
   const joined = messages.join(' ')
   const missingTable =
@@ -160,7 +160,6 @@ export function FriendGraphWorkspace(props: {
   )
 }
 
-const NODE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 const RELATION_TYPES = [
   'Friend',
   'Close Friend',
@@ -252,13 +251,6 @@ function personDisplayInitial(name: string): string {
   return t[0]!.toUpperCase()
 }
 
-function mimeToNodeExt(mime: string): string {
-  if (mime === 'image/jpeg') return 'jpg'
-  if (mime === 'image/png') return 'png'
-  if (mime === 'image/webp') return 'webp'
-  return 'jpg'
-}
-
 function formatRememberSavedAt(value: string): string {
   const d = new Date(value)
   if (!Number.isFinite(d.getTime())) return value
@@ -272,45 +264,6 @@ function formatRememberSavedAt(value: string): string {
     minute: '2-digit',
   })
   return `${date} at ${time}`
-}
-
-function isBirthdayKey(value: string): boolean {
-  return value.trim().toLowerCase() === 'birthday'
-}
-
-function canonicalBirthday(value: string): { canonical: string | null; parseable: boolean } {
-  const t = value.trim()
-  if (!t) return { canonical: null, parseable: true }
-  const ymd = /^\d{4}-\d{2}-\d{2}$/
-  if (ymd.test(t)) return { canonical: t, parseable: true }
-  const d = new Date(t)
-  if (!Number.isFinite(d.getTime())) return { canonical: null, parseable: false }
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return { canonical: `${yyyy}-${mm}-${dd}`, parseable: true }
-}
-
-function formatBirthday(val: string): string {
-  if (!val) return ''
-  const d = new Date(val + 'T00:00:00')
-  if (!Number.isFinite(d.getTime())) return ''
-  return d.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
-function birthdayAge(val: string): number | null {
-  if (!val) return null
-  const d = new Date(val + 'T00:00:00')
-  if (!Number.isFinite(d.getTime())) return null
-  const now = new Date()
-  let age = now.getFullYear() - d.getFullYear()
-  const m = now.getMonth() - d.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1
-  return age >= 0 ? age : null
 }
 
 function normalizeCommunityId(value: string | null | undefined): string | null {
@@ -349,14 +302,6 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(170, 170, 170, ${alpha})`
 }
 
-function storagePathFromNodePhotoUrl(url: string): string | null {
-  const marker = '/node-photos/'
-  const idx = url.indexOf(marker)
-  if (idx < 0) return null
-  const part = url.slice(idx + marker.length)
-  return part.length ? part : null
-}
-
 function FriendGraphInner({
   supabase,
   userId,
@@ -393,6 +338,8 @@ function FriendGraphInner({
   )
   const [hoverCommunityId, setHoverCommunityId] = useState<string | null>(null)
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
+  const [view, setView] = useState<'graph' | 'list'>('graph')
+  const [listSearch, setListSearch] = useState('')
 
   const [addConnectionOpen, setAddConnectionOpen] = useState(false)
   const [connectPersonAId, setConnectPersonAId] = useState('')
@@ -440,8 +387,12 @@ function FriendGraphInner({
   )
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [avatarPickerActive, setAvatarPickerActive] = useState(false)
-  const [panelPhotos, setPanelPhotos] = useState<NodePhotoRow[]>([])
-  const [photoLightbox, setPhotoLightbox] = useState<NodePhotoRow | null>(null)
+  const [photoGalleryRefresh, setPhotoGalleryRefresh] = useState(0)
+  const [shareGraphOpen, setShareGraphOpen] = useState(false)
+  const [profileUsernameForShare, setProfileUsernameForShare] = useState<
+    string | null
+  >(null)
+  const [graphShareIsPublic, setGraphShareIsPublic] = useState(true)
   const [panelSaving, setPanelSaving] = useState(false)
   const [panelErr, setPanelErr] = useState<string | null>(null)
   const [panelSaveState, setPanelSaveState] = useState<'idle' | 'saved' | 'error'>(
@@ -467,17 +418,53 @@ function FriendGraphInner({
   const [rememberExpandedIds, setRememberExpandedIds] = useState<
     Record<string, boolean>
   >({})
-  const addPhotoInputRef = useRef<HTMLInputElement | null>(null)
 
   const pinSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelSaveFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const panelRowsRef = useRef(panelRows)
+  panelRowsRef.current = panelRows
   const shiftRef = useRef(shiftHeld)
   shiftRef.current = shiftHeld
+
+  useEffect(() => {
+    if (!supabase) return
+    let cancelled = false
+    void supabase
+      .from('profiles')
+      .select('username, is_public')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error || !data) {
+          setProfileUsernameForShare(null)
+          return
+        }
+        setProfileUsernameForShare(
+          (data as { username?: string | null }).username ?? null
+        )
+        const pub = (data as { is_public?: boolean | null }).is_public
+        setGraphShareIsPublic(pub !== false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [supabase, userId])
 
   const selfNodeId = useMemo(
     () => people.find((p) => p.is_self)?.id ?? null,
     [people]
   )
+
+  const listRows = useMemo(() => {
+    const q = listSearch.trim().toLowerCase()
+    return people
+      .filter((p) => !p.is_self)
+      .filter((p) => !q || p.name.toLowerCase().includes(q))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      )
+  }, [people, listSearch])
 
   const loadedRelationTagsForPanel = useMemo(() => {
     if (!selectedPerson || selectedPerson.is_self || !selfNodeId) return [] as string[]
@@ -759,6 +746,28 @@ function FriendGraphInner({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nodesForFlow)
   const [edges, setEdges, onEdgesChange] = useEdgesState(styledEdges)
+
+  const selectPersonFromList = useCallback(
+    (person: DbPerson) => {
+      setNodeContextMenu(null)
+      setLocationLineTooltip(null)
+      setSelectedCommunityId(null)
+      setHoverCommunityId(null)
+      setSelectedLocationId(null)
+      setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
+      setSelectedEdge(null)
+      setGraphHighlight({ kind: 'node', nodeId: person.id })
+      setSelectedPerson(person)
+    },
+    [setEdges]
+  )
+
+  useEffect(() => {
+    if (view === 'list') {
+      setNodeContextMenu(null)
+      setLocationLineTooltip(null)
+    }
+  }, [view])
 
   const clearTransientConnectionPreview = useCallback(() => {
     // Drop any ad-hoc edge objects that are not backed by DB edge data.
@@ -1164,32 +1173,6 @@ function FriendGraphInner({
     void loadRememberHistory(selectedPerson.id)
   }, [selectedPerson, loadRememberHistory])
 
-  const loadNodePhotos = useCallback(
-    async (nodeId: string) => {
-      const { data, error: pErr } = await supabase
-        .from('node_photos')
-        .select('id,owner_id,node_id,url,is_primary,uploaded_at')
-        .eq('owner_id', userId)
-        .eq('node_id', nodeId)
-        .order('uploaded_at', { ascending: true })
-      if (pErr) {
-        setPanelPhotos([])
-        return
-      }
-      setPanelPhotos((data ?? []) as NodePhotoRow[])
-    },
-    [supabase, userId]
-  )
-
-  useEffect(() => {
-    if (!selectedPerson) {
-      setPanelPhotos([])
-      setPhotoLightbox(null)
-      return
-    }
-    void loadNodePhotos(selectedPerson.id)
-  }, [selectedPerson, loadNodePhotos])
-
   const markSaveSuccess = useCallback(() => {
     setPanelErr(null)
     setPanelSaveState('saved')
@@ -1274,13 +1257,37 @@ function FriendGraphInner({
     if (!selectedPerson) return
     const rows = customAttributesToRows(parseCustomAttributes(selectedPerson.custom_attributes))
     const normalizedRows = rows.map((r) => {
-      if (!isBirthdayKey(r.key)) return r
-      const parsed = canonicalBirthday(r.value)
-      if (!parsed.parseable || !parsed.canonical || parsed.canonical === r.value) return r
-      return { ...r, value: parsed.canonical }
+      const next = normalizeAttributeValueForKey(r.key, r.value)
+      if (next === r.value) return r
+      return { ...r, value: next }
     })
     setPanelRows(normalizedRows)
   }, [selectedPerson])
+
+  const persistCustomAttributesBlur = useCallback(async () => {
+    if (!selectedPerson || selectedPerson.id.startsWith('__draft__')) return
+    const rows = panelRowsRef.current
+    const attrs = rowsToCustomAttributes(rows)
+    const { error } = await supabase
+      .from('nodes')
+      .update({ custom_attributes: attrs })
+      .eq('id', selectedPerson.id)
+      .eq('owner_id', userId)
+    if (error) {
+      console.error('[custom_attributes] blur save', error)
+      setPanelErr(error.message)
+      return
+    }
+    setPanelErr(null)
+    setPeople((prev) =>
+      prev.map((p) =>
+        p.id === selectedPerson.id ? { ...p, custom_attributes: attrs } : p
+      )
+    )
+    setSelectedPerson((p) =>
+      p && p.id === selectedPerson.id ? { ...p, custom_attributes: attrs } : p
+    )
+  }, [selectedPerson, supabase, userId])
 
   const saveRelationTagsToUser = useCallback(
     async (nextTagsRaw: string[]) => {
@@ -1567,160 +1574,39 @@ function FriendGraphInner({
     showToast('Community updated ✓', 'success')
   }, [editCommunityId, editCommunityName, editCommunityColor, supabase, userId, showToast])
 
-  const setMainPhoto = useCallback(
-    async (photo: NodePhotoRow) => {
-      if (!selectedPerson) return
-      const personId = selectedPerson.id
-      const { error: clearErr } = await supabase
-        .from('node_photos')
-        .update({ is_primary: false })
-        .eq('owner_id', userId)
-        .eq('node_id', personId)
-      if (clearErr) {
-        showToast(clearErr.message, 'error')
-        return
-      }
-      const { error: setErr } = await supabase
-        .from('node_photos')
-        .update({ is_primary: true })
-        .eq('owner_id', userId)
-        .eq('id', photo.id)
-      if (setErr) {
-        showToast(setErr.message, 'error')
-        return
-      }
-      const { error: nErr } = await supabase
-        .from('nodes')
-        .update({ avatar_url: photo.url })
-        .eq('owner_id', userId)
-        .eq('id', personId)
-      if (nErr) {
-        showToast(nErr.message, 'error')
-        return
-      }
-      patchPersonAvatar(personId, photo.url)
-      await loadNodePhotos(personId)
-      setPhotoLightbox(null)
-      showToast('Main photo updated.', 'success')
+  const onGalleryPrimaryAvatarChange = useCallback(
+    (url: string | null) => {
+      const id = selectedPerson?.id
+      if (!id || id.startsWith('__draft__')) return
+      patchPersonAvatar(id, url)
     },
-    [selectedPerson, supabase, userId, patchPersonAvatar, loadNodePhotos, showToast]
-  )
-
-  const deletePhoto = useCallback(
-    async (photo: NodePhotoRow) => {
-      if (!selectedPerson) return
-      const personId = selectedPerson.id
-      const path = storagePathFromNodePhotoUrl(photo.url)
-      if (path) {
-        await supabase.storage.from('node-photos').remove([path])
-      }
-      const { error: delErr } = await supabase
-        .from('node_photos')
-        .delete()
-        .eq('owner_id', userId)
-        .eq('id', photo.id)
-      if (delErr) {
-        showToast(delErr.message, 'error')
-        return
-      }
-      const remaining = panelPhotos.filter((p) => p.id !== photo.id)
-      if (photo.is_primary) {
-        const nextPrimary = remaining[0] ?? null
-        if (nextPrimary) {
-          const { error: setErr } = await supabase
-            .from('node_photos')
-            .update({ is_primary: true })
-            .eq('owner_id', userId)
-            .eq('id', nextPrimary.id)
-          if (!setErr) {
-            await supabase
-              .from('nodes')
-              .update({ avatar_url: nextPrimary.url })
-              .eq('owner_id', userId)
-              .eq('id', personId)
-            patchPersonAvatar(personId, nextPrimary.url)
-          }
-        } else {
-          await supabase
-            .from('nodes')
-            .update({ avatar_url: null })
-            .eq('owner_id', userId)
-            .eq('id', personId)
-          patchPersonAvatar(personId, null)
-        }
-      }
-      await loadNodePhotos(personId)
-      setPhotoLightbox(null)
-      showToast('Photo deleted.', 'success')
-    },
-    [selectedPerson, supabase, userId, panelPhotos, loadNodePhotos, patchPersonAvatar, showToast]
+    [selectedPerson?.id, patchPersonAvatar]
   )
 
   const uploadNodePhoto = useCallback(
     async (file: File) => {
       if (!selectedPerson) return
-      if (!NODE_IMAGE_TYPES.includes(file.type as (typeof NODE_IMAGE_TYPES)[number])) {
-        showToast('Please choose a JPEG, PNG, or WebP image.', 'error')
+      const personId = selectedPerson.id
+      if (personId.startsWith('__draft__')) {
+        setPanelErr('Save this person before adding photos.')
         setAvatarPickerActive(false)
         return
       }
-      const personId = selectedPerson.id
-      const ext = mimeToNodeExt(file.type)
-      const path = `${userId}/${personId}/${Date.now()}.${ext}`
-
       setAvatarUploading(true)
       setPanelErr(null)
-
-      const { error: upErr } = await supabase.storage
-        .from('node-photos')
-        .upload(path, file, { upsert: false, cacheControl: '3600' })
-
-      if (upErr) {
-        setAvatarUploading(false)
-        setAvatarPickerActive(false)
-        showToast(upErr.message, 'error')
-        return
-      }
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from('node-photos').getPublicUrl(path)
-
-      const isFirst = panelPhotos.length === 0
-      const { error: iErr } = await supabase.from('node_photos').insert({
-        owner_id: userId,
-        node_id: personId,
-        url: publicUrl,
-        is_primary: isFirst,
-      })
-      if (iErr) {
-        setAvatarUploading(false)
-        setAvatarPickerActive(false)
-        showToast(iErr.message, 'error')
-        return
-      }
-      if (isFirst) {
-        const { error: nErr } = await supabase
-          .from('nodes')
-          .update({ avatar_url: publicUrl })
-          .eq('id', personId)
-          .eq('owner_id', userId)
-        if (!nErr) patchPersonAvatar(personId, publicUrl)
-      }
-      await loadNodePhotos(personId)
+      const result = await uploadNodeGalleryPhoto(supabase, personId, file)
       setAvatarUploading(false)
       setAvatarPickerActive(false)
-      showToast('Photo uploaded.', 'success')
+      if (!result.ok) {
+        setPanelErr(result.message)
+        return
+      }
+      if (result.wasPrimary) {
+        patchPersonAvatar(personId, result.publicUrl)
+      }
+      setPhotoGalleryRefresh((k) => k + 1)
     },
-    [
-      selectedPerson,
-      supabase,
-      userId,
-      panelPhotos.length,
-      loadNodePhotos,
-      patchPersonAvatar,
-      showToast,
-    ]
+    [selectedPerson, supabase, patchPersonAvatar]
   )
 
   const addLocation = useCallback(
@@ -2046,12 +1932,49 @@ function FriendGraphInner({
           {error}
         </div>
       ) : null}
-      {hint}
+      {view === 'graph' ? hint : null}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-background px-2 py-2 dark:border-zinc-800">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setView('graph')}
+            className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              view === 'graph'
+                ? 'bg-zinc-200 text-foreground dark:bg-zinc-700 dark:text-zinc-100'
+                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+            }`}
+          >
+            ⬡ Graph
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('list')}
+            className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              view === 'list'
+                ? 'bg-zinc-200 text-foreground dark:bg-zinc-700 dark:text-zinc-100'
+                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+            }`}
+          >
+            ≡ List
+          </button>
+        </div>
+        {profileUsernameForShare ? (
+          <button
+            type="button"
+            onClick={() => setShareGraphOpen(true)}
+            className="cursor-pointer rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-medium text-foreground transition-transform hover:scale-105 hover:bg-zinc-100 sm:text-sm dark:border-zinc-600 dark:hover:bg-zinc-800"
+          >
+            Share
+          </button>
+        ) : null}
+      </div>
       <div
-        className={`relative min-h-0 w-full flex-1 ${
-          constellationMode ? 'bg-zinc-950' : ''
+        className={`relative min-h-0 w-full flex-1 flex flex-col ${
+          view === 'graph' && constellationMode ? 'bg-zinc-950' : ''
         }`}
       >
+      {view === 'graph' ? (
+        <>
       {assignCommunityId ? (
         <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-zinc-300/80 bg-background/95 px-3 py-1 text-xs text-zinc-700 shadow dark:border-zinc-700 dark:text-zinc-300">
           Click nodes to add/remove from{' '}
@@ -2281,6 +2204,15 @@ function FriendGraphInner({
           </div>
         </>
       ) : null}
+        </>
+      ) : (
+        <NodesListView
+          rows={listRows}
+          searchQuery={listSearch}
+          onSearchChange={setListSearch}
+          onSelectPerson={selectPersonFromList}
+        />
+      )}
       </div>
 
       <div className="pointer-events-auto fixed bottom-4 right-4 z-20 flex flex-col gap-2 sm:flex-row">
@@ -2607,9 +2539,19 @@ function FriendGraphInner({
         personDisplayInitial={personDisplayInitial}
         panelRelationTags={panelRelationTags}
         relationTagPillClass={relationTagPillClass}
-        panelPhotos={panelPhotos}
-        setPhotoLightbox={setPhotoLightbox}
-        addPhotoInputRef={addPhotoInputRef}
+        photoGallery={
+          selectedPerson ? (
+            <NodePhotoGallery
+              supabase={supabase}
+              nodeId={selectedPerson.id}
+              disabled={
+                creatingDraftNode || selectedPerson.id.startsWith('__draft__')
+              }
+              refreshKey={photoGalleryRefresh}
+              onPrimaryAvatarChange={onGalleryPrimaryAvatarChange}
+            />
+          ) : null
+        }
         panelSaveState={panelSaveState}
         panelErr={panelErr}
         panelSaving={panelSaving}
@@ -2767,36 +2709,22 @@ function FriendGraphInner({
                           )
                         )
                       }
+                      onBlur={() => void persistCustomAttributesBlur()}
                     />
                     <div className="min-w-0 flex-1">
-                      {isBirthdayKey(row.key) ? (
-                        <>
-                          <input
-                            type="date"
-                            className="w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
-                            value={canonicalBirthday(row.value).canonical ?? ''}
-                            onChange={(e) =>
-                              setPanelRows((rows) =>
-                                rows.map((x, j) =>
-                                  j === i ? { ...x, value: e.target.value } : x
-                                )
+                      {getDateFieldType(row.key) ? (
+                        <DateAttributeField
+                          attrKey={row.key}
+                          value={row.value}
+                          onChange={(next) =>
+                            setPanelRows((rows) =>
+                              rows.map((x, j) =>
+                                j === i ? { ...x, value: next } : x
                               )
-                            }
-                          />
-                          {canonicalBirthday(row.value).parseable &&
-                          canonicalBirthday(row.value).canonical ? (
-                            <p className="mt-1 text-xs text-zinc-500">
-                              {formatBirthday(canonicalBirthday(row.value).canonical!)}
-                              {birthdayAge(canonicalBirthday(row.value).canonical!) != null
-                                ? ` · Age: ${birthdayAge(canonicalBirthday(row.value).canonical!)}`
-                                : ''}
-                            </p>
-                          ) : row.value.trim() ? (
-                            <p className="mt-1 text-xs text-amber-600">
-                              ⚠ Unrecognised date format
-                            </p>
-                          ) : null}
-                        </>
+                            )
+                          }
+                          onBlurPersist={() => void persistCustomAttributesBlur()}
+                        />
                       ) : (
                         <input
                           className="w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
@@ -2808,6 +2736,7 @@ function FriendGraphInner({
                               )
                             )
                           }
+                          onBlur={() => void persistCustomAttributesBlur()}
                         />
                       )}
                     </div>
@@ -2944,48 +2873,20 @@ function FriendGraphInner({
                 })}
               </ul>
             </div>
-            {panelErr ? (
-              <></>
-            ) : null}
           </>
         ) : null}
       </NodeDetailPanel>
 
-      {photoLightbox ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
-          onClick={() => setPhotoLightbox(null)}
-        >
-          <div
-            className="max-w-[min(90vw,42rem)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Image
-              src={photoLightbox.url}
-              alt=""
-              width={900}
-              height={900}
-              className="max-h-[70vh] w-auto rounded-lg object-contain"
-              unoptimized
-            />
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                className="rounded-md bg-foreground px-3 py-1.5 text-sm text-background"
-                onClick={() => void setMainPhoto(photoLightbox)}
-              >
-                Set as Main
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 dark:border-red-900 dark:text-red-300"
-                onClick={() => void deletePhoto(photoLightbox)}
-              >
-                Delete Photo
-              </button>
-            </div>
-          </div>
-        </div>
+      {profileUsernameForShare ? (
+        <ShareGraphModal
+          open={shareGraphOpen}
+          onClose={() => setShareGraphOpen(false)}
+          supabase={supabase}
+          userId={userId}
+          username={profileUsernameForShare}
+          initialIsPublic={graphShareIsPublic}
+          onIsPublicChange={(v) => setGraphShareIsPublic(v)}
+        />
       ) : null}
 
       {editCommunityOpen ? (

@@ -2,18 +2,10 @@ import { Navbar } from '@/components/navbar'
 import { SupabaseProvider } from '@/components/supabase-provider'
 import { ToastProvider } from '@/components/toast-provider'
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Inter } from "next/font/google"
 import './globals.css'
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-})
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-})
+const inter = Inter({ subsets: ["latin"] })
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
 
@@ -39,10 +31,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -50,7 +39,9 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="flex min-h-dvh flex-col bg-background font-sans text-foreground">
+      <body
+        className={`${inter.className} flex min-h-dvh flex-col bg-background text-foreground`}
+      >
         <SupabaseProvider>
           <ToastProvider>
             <Navbar />

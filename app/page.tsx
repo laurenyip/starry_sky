@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { Logo } from '@/components/Logo'
 import SmartCTA from '@/components/smart-cta'
 
 export default async function Home() {
@@ -30,9 +31,9 @@ export default async function Home() {
         <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
           Welcome
         </p>
-        <h1 className="mt-2 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
-          FriendGraph
-        </h1>
+        <div className="mt-2">
+          <Logo textClassName="text-4xl tracking-tight sm:text-5xl" />
+        </div>
         <p className="mt-6 max-w-lg text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
           Map the people in your life and how they&apos;re connected. Build your
           graph, add relationships, and share a read-only public profile so
