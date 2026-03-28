@@ -1,9 +1,8 @@
 'use client'
 
 import { useToast } from '@/components/toast-provider'
-import { DateAttributeField } from '@/components/friend-graph/date-attribute-field'
+import { SmartAttributeField } from '@/components/friend-graph/smart-attribute-field'
 import { CommunityConnectOverlay } from '@/components/friend-graph/community-connect-overlay'
-import { ShareGraphModal } from '@/components/share-graph-modal'
 import { CommunitiesLegend } from '@/components/friend-graph/communities-legend'
 import { ConstellationOverlay } from '@/components/friend-graph/constellation-overlay'
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
@@ -32,10 +31,7 @@ import {
   type DbPerson,
 } from '@/lib/flow-build'
 import { formatRelativeTime } from '@/lib/format-relative-time'
-import {
-  getDateFieldType,
-  normalizeAttributeValueForKey,
-} from '@/lib/date-attribute-helpers'
+import { normalizeAttributeValueForKey } from '@/lib/date-attribute-helpers'
 import {
   customAttributesToRows,
   parseCustomAttributes,
@@ -325,6 +321,16 @@ function FriendGraphInner({
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null)
   const [pendingConn, setPendingConn] = useState<PendingConn | null>(null)
 
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
+  const [bulkToolbarMounted, setBulkToolbarMounted] = useState(false)
+  const [bulkToolbarEnter, setBulkToolbarEnter] = useState(false)
+  const [bulkMenuOpen, setBulkMenuOpen] = useState<
+    'community' | 'location' | 'connect' | null
+  >(null)
+  const [bulkLocName, setBulkLocName] = useState('')
+  const [bulkConnectTags, setBulkConnectTags] = useState<string[]>([])
+  const [bulkActionBusy, setBulkActionBusy] = useState(false)
+
   const [communities, setCommunities] = useState<
     { id: string; name: string; owner_id: string; color: string }[]
   >([])
@@ -392,11 +398,6 @@ function FriendGraphInner({
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [avatarPickerActive, setAvatarPickerActive] = useState(false)
   const [photoGalleryRefresh, setPhotoGalleryRefresh] = useState(0)
-  const [shareGraphOpen, setShareGraphOpen] = useState(false)
-  const [profileUsernameForShare, setProfileUsernameForShare] = useState<
-    string | null
-  >(null)
-  const [graphShareIsPublic, setGraphShareIsPublic] = useState(true)
   const [panelSaving, setPanelSaving] = useState(false)
   const [panelErr, setPanelErr] = useState<string | null>(null)
   const [panelSaveState, setPanelSaveState] = useState<'idle' | 'saved' | 'error'>(
@@ -423,6 +424,8 @@ function FriendGraphInner({
     Record<string, boolean>
   >({})
 
+  const [showLeftPanel, setShowLeftPanel] = useState(true)
+
   const pinSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelSaveFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRowsRef = useRef(panelRows)
@@ -431,29 +434,14 @@ function FriendGraphInner({
   shiftRef.current = shiftHeld
 
   useEffect(() => {
-    if (!supabase) return
-    let cancelled = false
-    void supabase
-      .from('profiles')
-      .select('username, is_public')
-      .eq('id', userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error || !data) {
-          setProfileUsernameForShare(null)
-          return
-        }
-        setProfileUsernameForShare(
-          (data as { username?: string | null }).username ?? null
-        )
-        const pub = (data as { is_public?: boolean | null }).is_public
-        setGraphShareIsPublic(pub !== false)
-      })
-    return () => {
-      cancelled = true
+    try {
+      const v = localStorage.getItem('starmap_left_panel_visible')
+      if (v === 'false') setShowLeftPanel(false)
+      else if (v === 'true') setShowLeftPanel(true)
+    } catch {
+      // ignore
     }
-  }, [supabase, userId])
+  }, [])
 
   const selfNodeId = useMemo(
     () => people.find((p) => p.is_self)?.id ?? null,
@@ -490,6 +478,15 @@ function FriendGraphInner({
     () => people.filter((p) => !p.is_self).length,
     [people]
   )
+
+  const panelAttributesMap = useMemo(() => {
+    const o: Record<string, string> = {}
+    for (const r of panelRows) {
+      const k = r.key.trim()
+      if (k) o[k] = r.value
+    }
+    return o
+  }, [panelRows])
 
   const listRows = useMemo(() => {
     const q = listSearch.trim().toLowerCase()
@@ -804,6 +801,7 @@ function FriendGraphInner({
       setSelectedLocationId(null)
       setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
       setSelectedEdge(null)
+      setSelectedNodeIds(new Set())
       setGraphHighlight({ kind: 'node', nodeId: person.id })
       setSelectedPerson(person)
     },
@@ -814,8 +812,23 @@ function FriendGraphInner({
     if (view === 'list') {
       setNodeContextMenu(null)
       setLocationLineTooltip(null)
+      setSelectedNodeIds(new Set())
     }
   }, [view])
+
+  const showBulkToolbar = selectedNodeIds.size >= 2
+  useEffect(() => {
+    if (showBulkToolbar) {
+      setBulkToolbarMounted(true)
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setBulkToolbarEnter(true))
+      })
+      return () => cancelAnimationFrame(id)
+    }
+    setBulkToolbarEnter(false)
+    const t = window.setTimeout(() => setBulkToolbarMounted(false), 200)
+    return () => window.clearTimeout(t)
+  }, [showBulkToolbar])
 
   const clearTransientConnectionPreview = useCallback(() => {
     // Drop any ad-hoc edge objects that are not backed by DB edge data.
@@ -858,6 +871,8 @@ function FriendGraphInner({
                 data: {
                   ...(n.data as Record<string, unknown>),
                   shiftConnect: sh,
+                  multiSelected: selectedNodeIds.has(n.id),
+                  selectedInPanel: selectedPerson?.id === n.id,
                 },
               }
             : n
@@ -872,7 +887,14 @@ function FriendGraphInner({
       })
     })
     setEdges(styledEdges)
-  }, [nodesForFlow, styledEdges, setNodes, setEdges])
+  }, [
+    nodesForFlow,
+    styledEdges,
+    setNodes,
+    setEdges,
+    selectedNodeIds,
+    selectedPerson?.id,
+  ])
 
   useEffect(() => {
     setNodes((nds) =>
@@ -890,6 +912,8 @@ function FriendGraphInner({
       if (e.key === 'Escape') {
         setAssignCommunityId(null)
         setNodeContextMenu(null)
+        setBulkMenuOpen(null)
+        setSelectedNodeIds(new Set())
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1676,6 +1700,192 @@ function FriendGraphInner({
     [supabase, userId, loadData]
   )
 
+  const bulkAddNodesToCommunity = useCallback(
+    async (communityId: string) => {
+      const cid = normalizeCommunityId(communityId)
+      if (!cid) return
+      const ids = [...selectedNodeIds].filter((id) => {
+        const p = people.find((x) => x.id === id)
+        return p && !p.is_self
+      })
+      if (ids.length === 0) return
+      const rows: {
+        owner_id: string
+        node_id: string
+        community_id: string
+        joined_at: string
+      }[] = []
+      for (const nodeId of ids) {
+        if (nodeCommunityMap.get(nodeId)?.includes(cid)) continue
+        rows.push({
+          owner_id: userId,
+          node_id: nodeId,
+          community_id: cid,
+          joined_at: new Date().toISOString(),
+        })
+      }
+      if (rows.length === 0) {
+        showToast('Everyone already in that community.', 'success')
+        setSelectedNodeIds(new Set())
+        setBulkMenuOpen(null)
+        return
+      }
+      setBulkActionBusy(true)
+      const { error } = await supabase.from('node_communities').insert(rows)
+      setBulkActionBusy(false)
+      if (error) {
+        showToast(error.message, 'error')
+        return
+      }
+      await refreshNodeCommunities()
+      const comm = communities.find((c) => c.id === cid)
+      showToast(`Added to ${comm?.name ?? 'community'} ✓`, 'success')
+      setSelectedNodeIds(new Set())
+      setBulkMenuOpen(null)
+    },
+    [
+      selectedNodeIds,
+      people,
+      nodeCommunityMap,
+      supabase,
+      userId,
+      refreshNodeCommunities,
+      communities,
+      showToast,
+    ]
+  )
+
+  const bulkApplyLocation = useCallback(async () => {
+    const trimmed = bulkLocName.trim()
+    if (!trimmed) {
+      showToast('Enter a location name.', 'error')
+      return
+    }
+    let locId: string | null =
+      locations.find((l) => l.name.trim().toLowerCase() === trimmed.toLowerCase())
+        ?.id ?? null
+    if (!locId) {
+      locId = await addLocation(trimmed)
+    }
+    if (!locId) return
+    const ids = [...selectedNodeIds].filter(
+      (id) => !people.find((p) => p.id === id)?.is_self
+    )
+    if (ids.length === 0) return
+    setBulkActionBusy(true)
+    const { error } = await supabase
+      .from('nodes')
+      .update({ location_id: locId })
+      .eq('owner_id', userId)
+      .in('id', ids)
+    setBulkActionBusy(false)
+    if (error) {
+      showToast(error.message, 'error')
+      return
+    }
+    await loadData()
+    showToast('Locations updated ✓', 'success')
+    setSelectedNodeIds(new Set())
+    setBulkMenuOpen(null)
+    setBulkLocName('')
+  }, [
+    bulkLocName,
+    selectedNodeIds,
+    people,
+    locations,
+    addLocation,
+    supabase,
+    userId,
+    loadData,
+    showToast,
+  ])
+
+  const bulkApplyConnect = useCallback(async () => {
+    const relation_types = normalizeRelationTags(bulkConnectTags)
+    if (relation_types.length === 0) {
+      showToast('Pick at least one relation tag.', 'error')
+      return
+    }
+    const legacy = legacyTagToRelationTypeLegacyField(relation_types[0] ?? null)
+    const ids = [...selectedNodeIds].filter(
+      (id) => !people.find((p) => p.id === id)?.is_self
+    )
+    if (ids.length < 2) {
+      showToast('Need at least two people to connect.', 'error')
+      return
+    }
+    const deduped = dedupeEdgesForGraph(dbEdges)
+    let pairsCreated = 0
+    const rows: {
+      owner_id: string
+      source_node_id: string
+      target_node_id: string
+      relation_types: string[]
+      relation_type: string | null
+      community_id: null
+      label: null
+    }[] = []
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = ids[i]!
+        const b = ids[j]!
+        const exists = deduped.some(
+          (e) =>
+            pairKey(e.source_node_id, e.target_node_id) === pairKey(a, b)
+        )
+        if (exists) continue
+        pairsCreated += 1
+        rows.push(
+          {
+            owner_id: userId,
+            source_node_id: a,
+            target_node_id: b,
+            relation_types,
+            relation_type: legacy,
+            community_id: null,
+            label: null,
+          },
+          {
+            owner_id: userId,
+            source_node_id: b,
+            target_node_id: a,
+            relation_types,
+            relation_type: legacy,
+            community_id: null,
+            label: null,
+          }
+        )
+      }
+    }
+    if (rows.length === 0) {
+      showToast('Those connections already exist.', 'success')
+      setSelectedNodeIds(new Set())
+      setBulkMenuOpen(null)
+      return
+    }
+    setBulkActionBusy(true)
+    const { error } = await supabase.from('edges').insert(rows)
+    setBulkActionBusy(false)
+    if (error) {
+      showToast(error.message, 'error')
+      return
+    }
+    await loadData()
+    showToast(`${pairsCreated} connections created ✓`, 'success')
+    setSelectedNodeIds(new Set())
+    setBulkMenuOpen(null)
+    setBulkConnectTags([])
+  }, [
+    bulkConnectTags,
+    selectedNodeIds,
+    people,
+    dbEdges,
+    supabase,
+    userId,
+    loadData,
+    showToast,
+  ])
+
   const createDraftPersonAndOpenPanel = useCallback(async () => {
     setSubmitErr(null)
     const locId = locations[0]?.id ?? null
@@ -1981,18 +2191,7 @@ function FriendGraphInner({
         </div>
       ) : null}
       {view === 'graph' ? hint : null}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-background px-3 py-2 dark:border-zinc-800">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          {profileUsernameForShare ? (
-            <button
-              type="button"
-              onClick={() => setShareGraphOpen(true)}
-              className="shrink-0 cursor-pointer rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-medium text-foreground transition-transform hover:scale-105 hover:bg-zinc-100 sm:text-sm dark:border-zinc-600 dark:hover:bg-zinc-800"
-            >
-              Share
-            </button>
-          ) : null}
-        </div>
+      <div className="flex shrink-0 items-center justify-end gap-3 border-b border-zinc-200 bg-background px-3 py-2 dark:border-zinc-800">
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
@@ -2034,7 +2233,97 @@ function FriendGraphInner({
           . Click ✏️ again or press Esc to exit.
         </div>
       ) : null}
-      <ReactFlow
+      <div className="flex min-h-0 flex-1 flex-row">
+        <div
+          className={`shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
+            showLeftPanel ? 'w-56 opacity-100' : 'pointer-events-none w-0 opacity-0'
+          }`}
+        >
+          <div className="box-border h-full w-56 min-h-0 overflow-y-auto p-2 pr-1">
+            <CommunitiesLegend
+              communities={communities.map((c) => ({
+                id: c.id,
+                name: c.name,
+                color: c.color,
+              }))}
+              activeCommunityKey={activeConstellationId}
+              activeLocationId={selectedLocationId}
+              locations={locationRowsForLegend}
+              onHoverCommunity={(key) => setHoverCommunityId(key)}
+              onPickCommunity={(key) => {
+                setSelectedLocationId(null)
+                const normalizedKey =
+                  key === NO_COMMUNITY_KEY
+                    ? NO_COMMUNITY_KEY
+                    : normalizeCommunityId(key) ?? NO_COMMUNITY_KEY
+                if (selectedCommunityId === normalizedKey) {
+                  setSelectedCommunityId(null)
+                  setHoverCommunityId(null)
+                  setGraphHighlight({ kind: 'none' })
+                  setSelectedPerson(null)
+                  setSelectedEdge(null)
+                  setEdges((eds) =>
+                    eds.map((edge) => ({ ...edge, selected: false }))
+                  )
+                  return
+                }
+                setSelectedCommunityId(normalizedKey)
+                setGraphHighlight({ kind: 'none' })
+                setSelectedPerson(null)
+                setSelectedEdge(null)
+                setEdges((eds) =>
+                  eds.map((edge) => ({ ...edge, selected: false }))
+                )
+              }}
+              onPickLocation={(locationId) => {
+                setHoverCommunityId(null)
+                setSelectedCommunityId(null)
+                setSelectedPerson(null)
+                setSelectedEdge(null)
+                setGraphHighlight({ kind: 'none' })
+                setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
+                setSelectedLocationId((prev) => (prev === locationId ? null : locationId))
+              }}
+              onEditCommunity={(community) => {
+                setEditCommunityId(community.id)
+                setEditCommunityName(community.name)
+                setEditCommunityColor(community.color)
+                setEditCommunityOpen(true)
+                setNodeContextMenu(null)
+              }}
+              onNewCommunity={() => {
+                setNewCommunityName('')
+                setNewCommunityColor('#FF6B6B')
+                setNewCommunityOpen(true)
+              }}
+            />
+          </div>
+        </div>
+        <div className="relative min-h-0 flex-1">
+          <button
+            type="button"
+            aria-label={
+              showLeftPanel
+                ? 'Hide communities and locations panel'
+                : 'Show communities and locations panel'
+            }
+            aria-expanded={showLeftPanel}
+            onClick={() => {
+              setShowLeftPanel((prev) => {
+                const next = !prev
+                try {
+                  localStorage.setItem('starmap_left_panel_visible', String(next))
+                } catch {
+                  // ignore
+                }
+                return next
+              })
+            }}
+            className="absolute left-0 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-r-lg border border-gray-200 bg-white px-1 py-3 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:bg-gray-800"
+          >
+            {showLeftPanel ? '‹' : '›'}
+          </button>
+          <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
@@ -2048,13 +2337,26 @@ function FriendGraphInner({
         defaultEdgeOptions={{ style: { strokeDasharray: 'none' } }}
         nodesConnectable={shiftHeld}
         elementsSelectable
-        onNodeClick={(_, n) => {
+        onNodeClick={(event, n) => {
           setNodeContextMenu(null)
           setLocationLineTooltip(null)
+          if (event.shiftKey && n.type === 'person') {
+            const row = people.find((p) => p.id === n.id)
+            if (row?.is_self) return
+            event.preventDefault()
+            setSelectedNodeIds((prev) => {
+              const next = new Set(prev)
+              if (next.has(n.id)) next.delete(n.id)
+              else next.add(n.id)
+              return next
+            })
+            return
+          }
           if (assignCommunityId && n.type === 'person') {
             void toggleNodeCommunityMembership(n.id, assignCommunityId)
             return
           }
+          setSelectedNodeIds(new Set())
           setSelectedCommunityId(null)
           setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
           setSelectedEdge(null)
@@ -2067,6 +2369,7 @@ function FriendGraphInner({
         onPaneClick={() => {
           setNodeContextMenu(null)
           setLocationLineTooltip(null)
+          setSelectedNodeIds(new Set())
           setSelectedCommunityId(null)
           setHoverCommunityId(null)
           setSelectedLocationId(null)
@@ -2078,6 +2381,7 @@ function FriendGraphInner({
         onEdgeClick={(_, e) => {
           setNodeContextMenu(null)
           setLocationLineTooltip(null)
+          setSelectedNodeIds(new Set())
           setSelectedPerson(null)
           setEdges((eds) =>
             eds.map((edge) => ({ ...edge, selected: edge.id === e.id }))
@@ -2140,64 +2444,155 @@ function FriendGraphInner({
           pannable
           maskColor="rgba(0,0,0,0.12)"
         />
-      </ReactFlow>
-      <CommunitiesLegend
-        communities={communities.map((c) => ({
-          id: c.id,
-          name: c.name,
-          color: c.color,
-        }))}
-        activeCommunityKey={activeConstellationId}
-        activeLocationId={selectedLocationId}
-        locations={locationRowsForLegend}
-        onHoverCommunity={(key) => setHoverCommunityId(key)}
-        onPickCommunity={(key) => {
-          setSelectedLocationId(null)
-          const normalizedKey =
-            key === NO_COMMUNITY_KEY
-              ? NO_COMMUNITY_KEY
-              : normalizeCommunityId(key) ?? NO_COMMUNITY_KEY
-          if (selectedCommunityId === normalizedKey) {
-            setSelectedCommunityId(null)
-            setHoverCommunityId(null)
-            setGraphHighlight({ kind: 'none' })
-            setSelectedPerson(null)
-            setSelectedEdge(null)
-            setEdges((eds) =>
-              eds.map((edge) => ({ ...edge, selected: false }))
-            )
-            return
-          }
-          setSelectedCommunityId(normalizedKey)
-          setGraphHighlight({ kind: 'none' })
-          setSelectedPerson(null)
-          setSelectedEdge(null)
-          setEdges((eds) =>
-            eds.map((edge) => ({ ...edge, selected: false }))
-          )
-        }}
-        onPickLocation={(locationId) => {
-          setHoverCommunityId(null)
-          setSelectedCommunityId(null)
-          setSelectedPerson(null)
-          setSelectedEdge(null)
-          setGraphHighlight({ kind: 'none' })
-          setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
-          setSelectedLocationId((prev) => (prev === locationId ? null : locationId))
-        }}
-        onEditCommunity={(community) => {
-          setEditCommunityId(community.id)
-          setEditCommunityName(community.name)
-          setEditCommunityColor(community.color)
-          setEditCommunityOpen(true)
-          setNodeContextMenu(null)
-        }}
-        onNewCommunity={() => {
-          setNewCommunityName('')
-          setNewCommunityColor('#FF6B6B')
-          setNewCommunityOpen(true)
-        }}
-      />
+          </ReactFlow>
+        {bulkToolbarMounted && view === 'graph' ? (
+          <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+            <div
+              className={`relative flex items-center gap-2 rounded-2xl border border-white/10 bg-gray-900 px-4 py-2.5 text-white shadow-2xl transition-all duration-200 ease-out dark:border-gray-200 dark:bg-white dark:text-gray-900 ${
+                bulkToolbarEnter
+                  ? 'pointer-events-auto translate-y-0 opacity-100'
+                  : 'pointer-events-none translate-y-5 opacity-0'
+              }`}
+            >
+              {bulkMenuOpen === 'community' ? (
+                <div className="absolute bottom-full left-1/2 z-[60] mb-2 max-h-56 min-w-[14rem] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-600 dark:bg-zinc-900">
+                  {communities.length === 0 ? (
+                    <p className="px-2 py-1 text-xs text-zinc-500">No communities yet</p>
+                  ) : (
+                    communities.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        disabled={bulkActionBusy}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        onClick={() => void bulkAddNodesToCommunity(c.id)}
+                      >
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        <span className="flex-1">{c.name}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+              {bulkMenuOpen === 'location' ? (
+                <div className="absolute bottom-full left-1/2 z-[60] mb-2 w-[min(90vw,18rem)] -translate-x-1/2 rounded-xl border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-600 dark:bg-zinc-900">
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                    Set location for {selectedNodeIds.size} people:
+                  </p>
+                  <input
+                    type="text"
+                    value={bulkLocName}
+                    onChange={(e) => setBulkLocName(e.target.value)}
+                    placeholder="Location name"
+                    className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 outline-none dark:border-zinc-600 dark:bg-zinc-950 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    disabled={bulkActionBusy}
+                    onClick={() => void bulkApplyLocation()}
+                    className="mt-2 w-full rounded-lg bg-zinc-900 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+                  >
+                    Apply
+                  </button>
+                </div>
+              ) : null}
+              {bulkMenuOpen === 'connect' ? (
+                <div className="absolute bottom-full left-1/2 z-[60] mb-2 w-[min(92vw,22rem)] -translate-x-1/2 rounded-xl border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-600 dark:bg-zinc-900">
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Pick one or more relation tags
+                  </p>
+                  <div className="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+                    {(RELATION_TYPES as unknown as string[]).map((tag) => {
+                      const sel = bulkConnectTags.includes(tag)
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            setBulkConnectTags((prev) =>
+                              sel
+                                ? prev.filter((t) => t !== tag)
+                                : [...prev, tag]
+                            )
+                          }}
+                          className={relationTagPickerClass(sel)}
+                        >
+                          {tag}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={bulkActionBusy || bulkConnectTags.length === 0}
+                    onClick={() => void bulkApplyConnect()}
+                    className="mt-3 w-full rounded-lg bg-zinc-900 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+                  >
+                    Apply
+                  </button>
+                </div>
+              ) : null}
+
+              <span className="text-sm font-medium opacity-70">
+                {selectedNodeIds.size} selected
+              </span>
+              <div className="h-4 w-px bg-white/20 dark:bg-gray-300" aria-hidden />
+              <button
+                type="button"
+                disabled={bulkActionBusy}
+                onClick={() =>
+                  setBulkMenuOpen((m) => (m === 'community' ? null : 'community'))
+                }
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50 dark:hover:bg-black/10"
+              >
+                <span className="text-violet-400" aria-hidden>
+                  ●
+                </span>
+                Add to community
+              </button>
+              <button
+                type="button"
+                disabled={bulkActionBusy}
+                onClick={() =>
+                  setBulkMenuOpen((m) => (m === 'location' ? null : 'location'))
+                }
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50 dark:hover:bg-black/10"
+              >
+                <span aria-hidden>📍</span>
+                Set location
+              </button>
+              <button
+                type="button"
+                disabled={bulkActionBusy}
+                onClick={() =>
+                  setBulkMenuOpen((m) => (m === 'connect' ? null : 'connect'))
+                }
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50 dark:hover:bg-black/10"
+              >
+                <span className="text-xs opacity-80" aria-hidden>
+                  ——
+                </span>
+                Connect as…
+              </button>
+              <div className="h-4 w-px bg-white/20 dark:bg-gray-300" aria-hidden />
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedNodeIds(new Set())
+                  setBulkMenuOpen(null)
+                }}
+                className="text-sm opacity-50 transition-opacity hover:opacity-100"
+              >
+                ✕ Clear
+              </button>
+            </div>
+          </div>
+        ) : null}
+        </div>
+      </div>
       {nodeContextMenu ? (
         <>
           <div
@@ -2767,33 +3162,19 @@ function FriendGraphInner({
                       onBlur={() => void persistCustomAttributesBlur()}
                     />
                     <div className="min-w-0 flex-1">
-                      {getDateFieldType(row.key) ? (
-                        <DateAttributeField
-                          attrKey={row.key}
-                          value={row.value}
-                          onChange={(next) =>
-                            setPanelRows((rows) =>
-                              rows.map((x, j) =>
-                                j === i ? { ...x, value: next } : x
-                              )
+                      <SmartAttributeField
+                        attrKey={row.key}
+                        value={row.value}
+                        onChange={(next) =>
+                          setPanelRows((rows) =>
+                            rows.map((x, j) =>
+                              j === i ? { ...x, value: next } : x
                             )
-                          }
-                          onBlurPersist={() => void persistCustomAttributesBlur()}
-                        />
-                      ) : (
-                        <input
-                          className="w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
-                          value={row.value}
-                          onChange={(e) =>
-                            setPanelRows((rows) =>
-                              rows.map((x, j) =>
-                                j === i ? { ...x, value: e.target.value } : x
-                              )
-                            )
-                          }
-                          onBlur={() => void persistCustomAttributesBlur()}
-                        />
-                      )}
+                          )
+                        }
+                        onSave={() => void persistCustomAttributesBlur()}
+                        allAttributes={panelAttributesMap}
+                      />
                     </div>
                     <button
                       type="button"
@@ -2931,18 +3312,6 @@ function FriendGraphInner({
           </>
         ) : null}
       </NodeDetailPanel>
-
-      {profileUsernameForShare ? (
-        <ShareGraphModal
-          open={shareGraphOpen}
-          onClose={() => setShareGraphOpen(false)}
-          supabase={supabase}
-          userId={userId}
-          username={profileUsernameForShare}
-          initialIsPublic={graphShareIsPublic}
-          onIsPublicChange={(v) => setGraphShareIsPublic(v)}
-        />
-      ) : null}
 
       {editCommunityOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">

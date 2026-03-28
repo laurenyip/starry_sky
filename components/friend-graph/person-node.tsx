@@ -18,6 +18,10 @@ export type PersonNodeData = {
   /** Membership indicators (one or more community colours). */
   communityColorDots?: string[]
   isSelf?: boolean
+  /** Shift+click multi-select (graph canvas). */
+  multiSelected?: boolean
+  /** Node is the one open in the side panel (RF selection may be off). */
+  selectedInPanel?: boolean
 }
 
 function initials(name: string): string {
@@ -46,10 +50,13 @@ export function PersonNode({
   const isSelf = data.isSelf === true
   const glowHex = data.communityMemberGlowHex?.trim()
   const constellationMode = data.constellationMode === true
+  const multiSelected = data.multiSelected === true
+  const selectedInPanel = data.selectedInPanel === true
+  const highlighted = selected || selectedInPanel
   const labelLines = isSelf ? ['You'] : splitNameLabel(data.name)
 
   const glowStyle =
-    !selected && glowHex
+    !highlighted && !multiSelected && glowHex
       ? {
           boxShadow: constellationMode
             ? `0 0 22px 7px rgba(255,255,255,0.18), 0 0 0 2px rgba(255,255,255,0.55), 0 0 30px 10px rgba(251,191,36,0.12)`
@@ -61,9 +68,9 @@ export function PersonNode({
   return (
     <div
       className={[
-        'relative flex h-[52px] w-[52px] cursor-pointer select-none items-center justify-center rounded-full text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform,border-color,opacity] hover:scale-[1.03] hover:shadow-lg',
+        'relative flex h-[52px] w-[52px] cursor-pointer select-none items-center justify-center rounded-full text-xs font-semibold text-foreground shadow-md transition-[box-shadow,transform,border-color,opacity,filter] hover:scale-[1.03] hover:shadow-lg',
         isSelf ? 'h-[84px] w-[84px]' : '',
-        selected
+        highlighted
           ? 'ring-2 ring-violet-400/40'
           : '',
         data.justAdded ? 'animate-[node-in_0.65s_cubic-bezier(0.34,1.56,0.64,1)]' : '',
@@ -75,6 +82,12 @@ export function PersonNode({
       }}
       title={data.name}
     >
+      {multiSelected ? (
+        <div
+          className="pointer-events-none absolute inset-[-5px] rounded-full border-[1.5px] border-dashed border-white/90"
+          aria-hidden
+        />
+      ) : null}
       {(
         [
           ['n', 0, -1],
@@ -112,7 +125,7 @@ export function PersonNode({
       {isSelf ? (
         <div
           className="h-full w-full rounded-full p-[3px]"
-          style={{ backgroundColor: selected ? '#8B5CF6' : '#111827' }}
+          style={{ backgroundColor: highlighted ? '#8B5CF6' : '#111827' }}
         >
           <div className="h-full w-full rounded-full bg-white p-[2px]">
             <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-sm font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100">
@@ -134,7 +147,9 @@ export function PersonNode({
           </div>
         </div>
       ) : (
-        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-sm font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100">
+        <div
+          className={`flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-zinc-200 text-sm font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-100 ${multiSelected ? 'brightness-110' : ''}`}
+        >
           {avatar ? (
             <Image
               src={avatar}

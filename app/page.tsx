@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { DemoGraph } from '@/components/DemoGraph'
 import { Logo } from '@/components/Logo'
+import { SocialProof } from '@/components/SocialProof'
 import Link from 'next/link'
 
 export default async function Home() {
@@ -35,6 +36,8 @@ export default async function Home() {
         <div className="mt-2">
           <Logo textClassName="text-4xl tracking-tight sm:text-5xl" />
         </div>
+
+        <SocialProof />
 
         <section className="mt-12 flex w-full flex-col items-center gap-6 px-4 py-12">
           <p className="text-sm tracking-widest text-gray-400 uppercase">

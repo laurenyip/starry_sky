@@ -216,6 +216,7 @@ export function buildFlowElements(
           isSelf: p.is_self,
         },
         draggable: !p.is_self,
+        selectable: false,
         style: { zIndex: 2 },
       })
     }
@@ -257,6 +258,7 @@ export function buildFlowElements(
           isSelf: p.is_self,
         },
         draggable: !p.is_self,
+        selectable: false,
         style: { zIndex: 2 },
       })
     }

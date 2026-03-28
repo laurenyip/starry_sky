@@ -185,7 +185,7 @@ export function NodesListView({
                   <button
                     type="button"
                     onClick={() => onSelectPerson(person)}
-                    className="group relative flex w-full cursor-pointer items-center gap-3 border-b border-gray-100 px-4 py-2.5 text-left dark:border-gray-800/60"
+                    className="group relative flex w-full origin-left cursor-pointer items-center gap-3 border-b border-gray-100 px-4 py-2.5 text-left transition-transform duration-200 ease-out hover:scale-[1.01] dark:border-gray-800/60"
                   >
                     <div
                       className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 ease-in-out group-hover:opacity-100"
@@ -197,7 +197,7 @@ export function NodesListView({
                     />
                     <div className="relative z-10 flex min-w-0 flex-1 items-center gap-3">
                       <span
-                        className={`relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 text-xs font-semibold transition-shadow duration-300 ease-in-out group-hover:shadow-[0_0_8px_1px_rgba(167,139,250,0.12)] dark:group-hover:shadow-[0_0_10px_2px_rgba(167,139,250,0.2)] ${
+                        className={`relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 text-xs font-semibold ${
                           person.avatar_url
                             ? 'border-gray-200 dark:border-white/15'
                             : ''
@@ -241,7 +241,7 @@ export function NodesListView({
                         ) : null}
                       </div>
                       <span
-                        className="shrink-0 text-lg text-gray-300 transition-colors duration-300 ease-in-out group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-300"
+                        className="shrink-0 text-lg text-gray-300 transition-colors duration-200 dark:text-gray-600 group-hover:text-gray-600 dark:group-hover:text-gray-300"
                         aria-hidden
                       >
                         ›

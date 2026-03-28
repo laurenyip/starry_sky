@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Dark background -->
+  <rect width="32" height="32" rx="8" fill="#080B14"/>
+
+  <!-- Letter s in white, centered -->
+  <text
+    x="9"
+    y="22"
+    font-family="serif"
+    font-size="18"
+    font-weight="600"
+    fill="white">s</text>
+
+  <!-- 4-pointed star top-right -->
+  <path
+    d="M25 6 L26 9.5 L29.5 10.5 L26 11.5 L25 15
+       L24 11.5 L20.5 10.5 L24 9.5 Z"
+    fill="white"/>
+</svg>

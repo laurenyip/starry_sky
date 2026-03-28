@@ -17,6 +17,11 @@ export const metadata: Metadata = {
   },
   description:
     'Build a visual graph of people and how they connect. Share your public Starmap profile with a unique profile link.',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
   openGraph: {
     title: 'Starmap',
     description:
@@ -33,6 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <head>
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('theme');var d=t? t==='dark' : window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList; if(d) c.add('dark'); else c.remove('dark');}catch(e){}})();`,

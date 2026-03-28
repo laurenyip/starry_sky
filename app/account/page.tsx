@@ -2,8 +2,6 @@
 
 import { LoadingSpinner } from '@/components/loading-spinner'
 import { useSupabaseContext } from '@/components/supabase-provider'
-import { syncSelfNodeAvatarWithProfile } from '@/lib/sync-profile-avatar'
-import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -14,78 +12,49 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
 
-  const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
-
-  const savedFullNameRef = useRef('')
   const savedUsernameRef = useRef('')
-
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null)
-  const [avatarUploading, setAvatarUploading] = useState(false)
-  const [avatarError, setAvatarError] = useState<string | null>(null)
-  const avatarFileRef = useRef<HTMLInputElement | null>(null)
-
-  const [savedFlash, setSavedFlash] = useState<
-    null | 'fullName' | 'username' | 'avatar'
-  >(null)
-  const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   const [usernameError, setUsernameError] = useState<string | null>(null)
-  const [password, setPassword] = useState('')
+  const [usernameSavedFlash, setUsernameSavedFlash] = useState(false)
+  const usernameSavedTimer = useRef<number | null>(null)
+
+  const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordStatus, setPasswordStatus] = useState<
     null | { kind: 'success' | 'error'; message: string }
   >(null)
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
-  const clearSavedFlashSoon = useCallback(() => {
-    if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current)
-    savedFlashTimer.current = setTimeout(() => setSavedFlash(null), 1500)
-  }, [])
+  const [connectionCount, setConnectionCount] = useState<number | null>(null)
+
+  const [isPublic, setIsPublic] = useState(true)
+  const [publicSaving, setPublicSaving] = useState(false)
+  const [publicErr, setPublicErr] = useState<string | null>(null)
+
+  const [publicUrl, setPublicUrl] = useState('')
+  const [copyLabel, setCopyLabel] = useState<'Copy' | 'Copied ✓'>('Copy')
+  const copyTimer = useRef<number | null>(null)
+
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   useEffect(() => {
     return () => {
-      if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current)
+      if (usernameSavedTimer.current) clearTimeout(usernameSavedTimer.current)
+      if (copyTimer.current) clearTimeout(copyTimer.current)
     }
   }, [])
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('theme')
-      const prefersDark =
-        window.matchMedia &&
-        window.matchMedia('(prefers-color-scheme: dark)').matches
-      const next: 'light' | 'dark' =
-        saved === 'dark' || saved === 'light'
-          ? (saved as 'light' | 'dark')
-          : prefersDark
-            ? 'dark'
-            : 'light'
-      setTheme(next)
-      document.documentElement.classList.toggle('dark', next === 'dark')
-    } catch {
-      // ignore
+    if (typeof window === 'undefined') return
+    const u = username.trim()
+    if (!u) {
+      setPublicUrl('')
+      return
     }
-  }, [])
-
-  function toggleTheme() {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    try {
-      localStorage.setItem('theme', next)
-    } catch {
-      // ignore
-    }
-    document.documentElement.classList.toggle('dark', next === 'dark')
-  }
-
-  const handleLogout = useCallback(async () => {
-    if (!supabase) return
-    const { error } = await supabase.auth.signOut()
-    if (error) return
-    router.refresh()
-    router.push('/')
-  }, [supabase, router])
+    setPublicUrl(`${window.location.origin}/profile/${encodeURIComponent(u)}`)
+  }, [username])
 
   const loadProfile = useCallback(async () => {
     if (!supabase) return
@@ -101,34 +70,15 @@ export default function AccountPage() {
 
     setUserId(user.id)
 
-    // `full_name` may not exist yet; if it doesn't, we’ll still load username.
     const { data: row, error: qerr } = await supabase
       .from('profiles')
-      .select('username, full_name, avatar_url')
+      .select('username, is_public')
       .eq('id', user.id)
       .maybeSingle()
 
     if (qerr) {
-      const { data: row2, error: qerr2 } = await supabase
-        .from('profiles')
-        .select('username, avatar_url')
-        .eq('id', user.id)
-        .maybeSingle()
-      if (qerr2) {
-        setLoading(false)
-        setPasswordStatus({ kind: 'error', message: qerr2.message })
-        return
-      }
-      const u = String(row2?.username ?? '')
-      const av = row2?.avatar_url
-      savedUsernameRef.current = u
-      setUsername(u)
-      savedFullNameRef.current = ''
-      setFullName('')
-      setProfileAvatarUrl(
-        av == null || av === '' ? null : String(av)
-      )
       setLoading(false)
+      setPasswordStatus({ kind: 'error', message: qerr.message })
       return
     }
 
@@ -138,15 +88,10 @@ export default function AccountPage() {
     }
 
     const u = String(row.username ?? '')
-    const fn = String(row.full_name ?? '')
-    const av = row.avatar_url
     savedUsernameRef.current = u
-    savedFullNameRef.current = fn
     setUsername(u)
-    setFullName(fn)
-    setProfileAvatarUrl(
-      av == null || av === '' ? null : String(av)
-    )
+    const pub = (row as { is_public?: boolean | null }).is_public
+    setIsPublic(pub !== false)
     setLoading(false)
   }, [supabase, router])
 
@@ -154,28 +99,43 @@ export default function AccountPage() {
     void loadProfile()
   }, [loadProfile])
 
-  const saveFullNameOnBlur = useCallback(async () => {
+  const loadConnectionCount = useCallback(async () => {
     if (!supabase || !userId) return
-    const next = fullName.trim()
-    if (next === savedFullNameRef.current) return
+    const { count, error } = await supabase
+      .from('nodes')
+      .select('id', { count: 'exact', head: true })
+      .eq('owner_id', userId)
+      .eq('is_self', false)
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({ full_name: next })
-      .eq('id', userId)
+    if (error) {
+      setConnectionCount(null)
+      return
+    }
+    setConnectionCount(count ?? 0)
+  }, [supabase, userId])
 
-    if (error) return
-    savedFullNameRef.current = next
-    setSavedFlash('fullName')
-    clearSavedFlashSoon()
-  }, [supabase, userId, fullName, clearSavedFlashSoon])
+  useEffect(() => {
+    void loadConnectionCount()
+  }, [loadConnectionCount])
 
-  const saveUsernameOnBlur = useCallback(async () => {
+  const saveUsername = useCallback(async () => {
     if (!supabase || !userId) return
     const next = username.trim()
-    if (next === savedUsernameRef.current) return
-
+    if (!next) {
+      setUsernameError('Username is required')
+      return
+    }
     setUsernameError(null)
+    if (next === savedUsernameRef.current) {
+      setUsernameSavedFlash(true)
+      if (usernameSavedTimer.current) clearTimeout(usernameSavedTimer.current)
+      usernameSavedTimer.current = window.setTimeout(
+        () => setUsernameSavedFlash(false),
+        2000,
+      )
+      return
+    }
+
     const { error } = await supabase
       .from('profiles')
       .update({ username: next })
@@ -195,86 +155,105 @@ export default function AccountPage() {
     }
 
     savedUsernameRef.current = next
-    setSavedFlash('username')
-    clearSavedFlashSoon()
-  }, [supabase, userId, username, clearSavedFlashSoon])
-
-  const uploadProfileAvatar = useCallback(
-    async (file: File) => {
-      if (!supabase || !userId) return
-      setAvatarError(null)
-      setAvatarUploading(true)
-      const allowed = ['image/jpeg', 'image/png', 'image/webp']
-      if (!allowed.includes(file.type)) {
-        setAvatarError('Please use a JPEG, PNG, or WebP image.')
-        setAvatarUploading(false)
-        return
-      }
-      const ext = file.name.includes('.')
-        ? (file.name.split('.').pop() ?? 'jpg')
-        : 'jpg'
-      const path = `${userId}/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage
-        .from('avatars')
-        .upload(path, file, { upsert: false })
-      if (upErr) {
-        setAvatarError(upErr.message)
-        setAvatarUploading(false)
-        return
-      }
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from('avatars').getPublicUrl(path)
-      const { error: pErr } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', userId)
-      if (pErr) {
-        setAvatarError(pErr.message)
-        setAvatarUploading(false)
-        return
-      }
-      const { error: syncErr } = await syncSelfNodeAvatarWithProfile(
-        supabase,
-        userId,
-        publicUrl
-      )
-      if (syncErr) {
-        setAvatarError(syncErr.message)
-        setAvatarUploading(false)
-        return
-      }
-      setProfileAvatarUrl(publicUrl)
-      setSavedFlash('avatar')
-      clearSavedFlashSoon()
-      setAvatarUploading(false)
-    },
-    [supabase, userId, clearSavedFlashSoon]
-  )
+    setUsernameSavedFlash(true)
+    if (usernameSavedTimer.current) clearTimeout(usernameSavedTimer.current)
+    usernameSavedTimer.current = window.setTimeout(
+      () => setUsernameSavedFlash(false),
+      2000,
+    )
+  }, [supabase, userId, username])
 
   const updatePassword = useCallback(async () => {
     if (!supabase || !userId) return
     setPasswordStatus(null)
-    const next = password
-    const confirm = confirmPassword
-    if (!next || !confirm) {
-      setPasswordStatus({ kind: 'error', message: 'Please enter a new password.' })
+    if (!newPassword || !confirmPassword) {
+      setPasswordStatus({ kind: 'error', message: 'Please enter and confirm your new password.' })
       return
     }
-    if (next !== confirm) {
+    if (newPassword !== confirmPassword) {
       setPasswordStatus({ kind: 'error', message: 'Passwords do not match.' })
       return
     }
 
-    const { error } = await supabase.auth.updateUser({ password: next })
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) {
       setPasswordStatus({ kind: 'error', message: error.message })
       return
     }
-    setPassword('')
+    setNewPassword('')
     setConfirmPassword('')
     setPasswordStatus({ kind: 'success', message: 'Password updated ✓' })
-  }, [supabase, userId, password, confirmPassword])
+  }, [supabase, userId, newPassword, confirmPassword])
+
+  const copyPublicUrl = useCallback(async () => {
+    if (!publicUrl) return
+    try {
+      await navigator.clipboard.writeText(publicUrl)
+      setCopyLabel('Copied ✓')
+      if (copyTimer.current) clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => setCopyLabel('Copy'), 2000)
+    } catch {
+      setPublicErr('Could not copy to clipboard.')
+    }
+  }, [publicUrl])
+
+  const togglePublic = useCallback(
+    async (next: boolean) => {
+      if (!supabase || !userId) return
+      setPublicErr(null)
+      setPublicSaving(true)
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_public: next })
+        .eq('id', userId)
+      setPublicSaving(false)
+      if (error) {
+        setPublicErr(error.message)
+        return
+      }
+      setIsPublic(next)
+    },
+    [supabase, userId],
+  )
+
+  const confirmDeleteAccount = useCallback(async () => {
+    if (!supabase || !userId) return
+    const u = username.trim()
+    if (deleteConfirmInput !== u) return
+
+    setDeleteError(null)
+    setDeleteBusy(true)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session?.access_token) {
+      setDeleteBusy(false)
+      setDeleteError('Session expired. Please sign in again.')
+      return
+    }
+
+    const res = await fetch('/api/account/delete', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
+
+    if (!res.ok) {
+      setDeleteBusy(false)
+      setDeleteError(body.error ?? 'Could not delete account.')
+      return
+    }
+
+    await supabase.auth.signOut()
+    router.refresh()
+    router.push('/')
+  }, [supabase, userId, username, deleteConfirmInput, router])
 
   if (loading || !supabase) {
     return (
@@ -285,233 +264,262 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-10">
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">
-        Profile
-      </h1>
+    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-4 px-4 py-10">
+      <h1 className="text-xl font-semibold tracking-tight text-foreground">Profile</h1>
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700">
-        <div className="p-4">
-          <p className="text-sm font-medium text-foreground">Profile photo</p>
-          <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:items-center">
-            <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-zinc-200 bg-zinc-200/80 dark:border-zinc-600 dark:bg-zinc-700">
-              {avatarUploading ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/70">
-                  <span
-                    className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500"
-                    aria-hidden
-                  />
-                </div>
-              ) : null}
-              {profileAvatarUrl ? (
-                <Image
-                  src={profileAvatarUrl}
-                  alt=""
-                  width={80}
-                  height={80}
-                  className="h-full w-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-zinc-600 dark:text-zinc-300">
-                  {(username || '?').slice(0, 1).toUpperCase()}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col items-center gap-1 sm:items-start">
+      {/* Section 1 — Username */}
+      <section
+        className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+        aria-labelledby="section-username"
+      >
+        <h2 id="section-username" className="text-sm font-medium text-foreground">
+          Username
+        </h2>
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="min-w-0 flex-1">
+            <label htmlFor="profile-username" className="sr-only">
+              Username
+            </label>
+            <input
+              id="profile-username"
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value)
+                setUsernameError(null)
+              }}
+              autoComplete="username"
+              className="w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2 dark:border-zinc-600"
+            />
+            {usernameError ? (
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400" role="alert">
+                {usernameError}
+              </p>
+            ) : null}
+            {usernameSavedFlash ? (
+              <p className="mt-1 text-sm text-emerald-600 dark:text-emerald-400">Saved ✓</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => void saveUsername()}
+            className="shrink-0 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background"
+          >
+            Save
+          </button>
+        </div>
+      </section>
+
+      {/* Section 2 — Password */}
+      <section
+        className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+        aria-labelledby="section-password"
+      >
+        <h2 id="section-password" className="text-sm font-medium text-foreground">
+          Change Password
+        </h2>
+        <div className="mt-3 flex flex-col gap-3">
+          <div>
+            <label htmlFor="new-password" className="text-sm text-gray-600 dark:text-gray-400">
+              New password
+            </label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              className="mt-1 w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 dark:border-zinc-600"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="confirm-new-password"
+              className="text-sm text-gray-600 dark:text-gray-400"
+            >
+              Confirm new password
+            </label>
+            <input
+              id="confirm-new-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              className="mt-1 w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 dark:border-zinc-600"
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void updatePassword()}
+          className="mt-4 w-full rounded-md bg-foreground py-2.5 text-sm font-medium text-background sm:w-auto sm:px-6"
+        >
+          Update password
+        </button>
+        {passwordStatus ? (
+          <p
+            className={`mt-2 text-sm ${
+              passwordStatus.kind === 'success'
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-red-600 dark:text-red-400'
+            }`}
+            role={passwordStatus.kind === 'error' ? 'alert' : undefined}
+          >
+            {passwordStatus.message}
+          </p>
+        ) : null}
+      </section>
+
+      {/* Section 3 — Connections count */}
+      <section
+        className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+        aria-labelledby="section-connections"
+      >
+        <h2 id="section-connections" className="text-sm font-medium text-foreground">
+          Connections
+        </h2>
+        <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">
+          {connectionCount === null ? '—' : connectionCount}
+        </p>
+        <p className="mt-1 text-sm text-gray-400">people in your map</p>
+      </section>
+
+      {/* Section 4 — Share */}
+      <section
+        className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+        aria-labelledby="section-share"
+      >
+        <h2 id="section-share" className="text-sm font-medium text-foreground">
+          Share Your Graph
+        </h2>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+          <input
+            readOnly
+            value={publicUrl}
+            className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-foreground dark:border-zinc-600 dark:bg-zinc-950"
+            aria-label="Public profile URL"
+          />
+          <button
+            type="button"
+            onClick={() => void copyPublicUrl()}
+            disabled={!publicUrl}
+            className="shrink-0 whitespace-nowrap rounded-lg bg-gray-900 px-3 py-1.5 text-sm text-white transition-opacity disabled:opacity-50 dark:bg-white dark:text-gray-900"
+          >
+            {copyLabel}
+          </button>
+        </div>
+        {publicErr ? (
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">
+            {publicErr}
+          </p>
+        ) : null}
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <span className="text-sm text-foreground">Make graph public</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPublic}
+            disabled={publicSaving}
+            onClick={() => void togglePublic(!isPublic)}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+              isPublic ? 'bg-emerald-600' : 'bg-zinc-300 dark:bg-zinc-600'
+            } disabled:opacity-50`}
+          >
+            <span
+              className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                isPublic ? 'left-5' : 'left-0.5'
+              }`}
+            />
+          </button>
+        </div>
+        {!isPublic ? (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Your graph is currently private
+          </p>
+        ) : null}
+      </section>
+
+      {/* Section 5 — Delete */}
+      <section
+        className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"
+        aria-labelledby="section-delete"
+      >
+        <h2 id="section-delete" className="text-sm font-medium text-foreground">
+          Delete Account
+        </h2>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          This will permanently delete your account, all your nodes, connections, and
+          communities. This cannot be undone.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setDeleteOpen(true)
+            setDeleteConfirmInput('')
+            setDeleteError(null)
+          }}
+          className="mt-4 rounded-lg bg-red-500 px-4 py-2 text-sm text-white transition-colors hover:bg-red-600"
+        >
+          Delete my account
+        </button>
+      </section>
+
+      {deleteOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-modal-title"
+          >
+            <h3 id="delete-modal-title" className="font-semibold text-foreground">
+              Delete account
+            </h3>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              Type your username to confirm deletion:
+            </p>
+            <input
+              value={deleteConfirmInput}
+              onChange={(e) => {
+                setDeleteConfirmInput(e.target.value)
+                setDeleteError(null)
+              }}
+              className="mt-3 w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500/30 dark:border-zinc-600"
+              autoComplete="off"
+              placeholder={username}
+            />
+            {deleteError ? (
+              <p className="mt-2 text-sm text-red-600" role="alert">
+                {deleteError}
+              </p>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                disabled={avatarUploading}
-                onClick={() => avatarFileRef.current?.click()}
-                className="rounded-md border border-zinc-300 bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800"
+                onClick={() => setDeleteOpen(false)}
+                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-600"
               >
-                Change Photo
+                Cancel
               </button>
-              <input
-                ref={avatarFileRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="sr-only"
-                disabled={avatarUploading}
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  e.target.value = ''
-                  if (f) void uploadProfileAvatar(f)
-                }}
-              />
-              {savedFlash === 'avatar' ? (
-                <p className="text-xs text-zinc-500">Saved ✓</p>
-              ) : null}
-              {avatarError ? (
-                <p className="text-xs text-red-600" role="alert">
-                  {avatarError}
-                </p>
-              ) : null}
+              <button
+                type="button"
+                disabled={
+                  deleteBusy ||
+                  deleteConfirmInput.trim() !== username.trim() ||
+                  !username.trim()
+                }
+                onClick={() => void confirmDeleteAccount()}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteBusy ? 'Deleting…' : 'Delete forever'}
+              </button>
             </div>
           </div>
         </div>
-
-        <div className="border-t border-zinc-200 dark:border-zinc-700" />
-
-        <div className="p-4">
-          <label className="block text-sm font-medium text-foreground" htmlFor="full-name">
-            Full Name
-          </label>
-          <input
-            id="full-name"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            onBlur={() => void saveFullNameOnBlur()}
-            className="mt-1 w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 dark:border-zinc-600"
-          />
-          {savedFlash === 'fullName' ? (
-            <p className="mt-1 text-xs text-zinc-500 transition-opacity duration-500">
-              Saved ✓
-            </p>
-          ) : null}
-        </div>
-
-        <div className="border-t border-zinc-200 dark:border-zinc-700" />
-
-        <div className="p-4">
-          <label className="block text-sm font-medium text-foreground" htmlFor="username">
-            Username
-          </label>
-          <input
-            id="username"
-            value={username}
-            onChange={(e) => {
-              setUsername(e.target.value)
-              setUsernameError(null)
-            }}
-            onBlur={() => void saveUsernameOnBlur()}
-            className="mt-1 w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 dark:border-zinc-600"
-          />
-          {usernameError ? (
-            <p className="mt-1 text-xs text-red-600" role="alert">
-              {usernameError}
-            </p>
-          ) : null}
-          {!usernameError && savedFlash === 'username' ? (
-            <p className="mt-1 text-xs text-zinc-500 transition-opacity duration-500">
-              Saved ✓
-            </p>
-          ) : null}
-        </div>
-
-        <div className="border-t border-zinc-200 dark:border-zinc-700" />
-
-        <div className="p-4">
-          <div className="text-sm font-medium text-foreground">Change Password</div>
-
-          <div className="mt-3 flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="new-password" className="text-sm font-medium text-foreground">
-                New Password
-              </label>
-              <input
-                id="new-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-                className="w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 dark:border-zinc-600"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="confirm-password" className="text-sm font-medium text-foreground">
-                Confirm New Password
-              </label>
-              <input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-                className="w-full rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/20 dark:border-zinc-600"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => void updatePassword()}
-              className="w-full rounded-md bg-foreground py-2.5 text-sm font-medium text-background"
-            >
-              Update Password
-            </button>
-          </div>
-
-          {passwordStatus ? (
-            <p
-              className={`mt-2 text-xs ${
-                passwordStatus.kind === 'success'
-                  ? 'text-zinc-600 dark:text-zinc-300'
-                  : 'text-red-600'
-              }`}
-              role={passwordStatus.kind === 'error' ? 'alert' : undefined}
-            >
-              {passwordStatus.message}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-10 flex flex-col items-center gap-4 border-t border-zinc-200 pt-8 dark:border-zinc-700">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label="Toggle theme"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-background/60 text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-        >
-          {theme === 'dark' ? (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              className="h-4.5 w-4.5"
-              aria-hidden
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M21.752 15.002A9.718 9.718 0 0 1 12.003 21C6.477 21 2 16.523 2 11c0-4.556 3.04-8.402 7.221-9.62.35-.102.67.207.586.556A8 8 0 0 0 21.196 14.42c.35-.084.66.236.556.582Z"
-              />
-            </svg>
-          ) : (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              className="h-4.5 w-4.5"
-              aria-hidden
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 3v1.5M12 19.5V21M4.5 12H3M21 12h-1.5M6.22 6.22 5.16 5.16M18.84 18.84l-1.06-1.06M17.78 6.22l1.06-1.06M5.16 18.84l1.06-1.06"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
-              />
-            </svg>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleLogout()}
-          className="text-xs text-zinc-500 underline-offset-2 transition-colors hover:text-foreground hover:underline dark:text-zinc-400"
-        >
-          Log out
-        </button>
-      </div>
+      ) : null}
     </div>
   )
 }

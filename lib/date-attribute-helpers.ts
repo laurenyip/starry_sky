@@ -2,7 +2,13 @@ export function getDateFieldType(
   key: string
 ): 'birthday' | 'anniversary' | 'met' | 'upcoming' | null {
   const k = key.toLowerCase().trim()
-  if (k.includes('birthday') || k.includes('birth date')) return 'birthday'
+  if (
+    k.includes('birthday') ||
+    k.includes('birth date') ||
+    k.includes('dob') ||
+    k.includes('date of birth')
+  )
+    return 'birthday'
   if (k.includes('anniversary')) return 'anniversary'
   if (k.includes('met') || k.includes('how we met') || k.includes('first met'))
     return 'met'
@@ -11,7 +17,8 @@ export function getDateFieldType(
     k.includes('upcoming') ||
     k.includes('event') ||
     k.includes('trip') ||
-    k.includes('visit')
+    k.includes('visit') ||
+    k.includes('reminder')
   )
     return 'upcoming'
   return null

@@ -28,7 +28,7 @@ export function CommunitiesLegend({
   onNewCommunity: () => void
 }) {
   return (
-    <div className="pointer-events-auto absolute bottom-4 left-4 z-20 w-[min(16rem,calc(100%-2rem))] rounded-xl border border-zinc-200/90 bg-background/95 p-3 shadow-lg backdrop-blur-md dark:border-zinc-700/90">
+    <div className="pointer-events-auto z-20 flex w-full min-w-0 flex-col rounded-xl border border-zinc-200/90 bg-background/95 p-3 shadow-lg backdrop-blur-md dark:border-zinc-700/90">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
         Communities
       </p>
