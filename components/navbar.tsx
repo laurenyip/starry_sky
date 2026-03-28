@@ -1,6 +1,7 @@
 'use client'
 
 import { LogoMark } from '@/components/LogoMark'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { useSupabaseContext } from '@/components/supabase-provider'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -70,6 +71,7 @@ export function Navbar() {
           <nav className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 text-xs sm:gap-4 sm:text-sm">
             {session ? (
               <>
+                <ThemeToggle />
                 {username ? (
                   <Link
                     href={`/profile/${encodeURIComponent(username)}`}
@@ -92,6 +94,7 @@ export function Navbar() {
               </>
             ) : (
               <>
+                <ThemeToggle />
                 <Link
                   href="/login"
                   className="font-medium text-zinc-600 transition-colors hover:text-foreground dark:text-zinc-400"

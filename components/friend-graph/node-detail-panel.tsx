@@ -60,12 +60,12 @@ export function NodeDetailPanel(props: {
   if (!open || !node) return null
 
   return (
-    <aside className="fixed top-16 right-0 bottom-0 z-30 flex w-72 sm:w-80 flex-col border-l border-zinc-200 bg-background shadow-2xl dark:border-zinc-800">
-      <div className="border-b p-3 dark:border-zinc-800">
+    <aside className="fixed top-16 right-0 bottom-0 z-30 flex w-72 sm:w-80 flex-col border-l border-gray-200 bg-white shadow-2xl transition-colors duration-200 dark:border-gray-800 dark:bg-gray-900">
+      <div className="border-b border-gray-200 p-3 dark:border-gray-800">
         <div className="flex justify-end">
           <button
             type="button"
-            className="text-2xl leading-none text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+            className="text-2xl leading-none text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300"
             onClick={onClose}
             aria-label="Close"
           >
@@ -75,9 +75,9 @@ export function NodeDetailPanel(props: {
         <div className="mt-1 flex flex-col items-center gap-2 sm:flex-row sm:items-start">
           <div className="relative shrink-0">
             <div
-              className={`group relative flex h-14 w-14 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-zinc-100 transition-shadow dark:bg-zinc-800 ${
+              className={`group relative flex h-14 w-14 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gray-100 transition-shadow dark:bg-gray-800 ${
                 avatarPickerActive
-                  ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-background'
+                  ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900'
                   : ''
               }`}
             >
@@ -91,17 +91,17 @@ export function NodeDetailPanel(props: {
                   unoptimized
                 />
               ) : (
-                <span className="text-2xl font-bold text-zinc-700 dark:text-zinc-200">
+                <span className="text-2xl font-bold text-gray-800 dark:text-gray-200">
                   {personDisplayInitial(panelName || node.name)}
                 </span>
               )}
               {avatarUploading ? (
                 <div
-                  className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-[1px]"
+                  className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-[1px] dark:bg-gray-900/70"
                   aria-busy
                 >
                   <span
-                    className="h-7 w-7 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent dark:border-zinc-500"
+                    className="h-7 w-7 animate-spin rounded-full border-2 border-gray-400 border-t-transparent dark:border-gray-500"
                     role="status"
                   />
                 </div>
@@ -129,7 +129,7 @@ export function NodeDetailPanel(props: {
                   </svg>
                 </div>
               )}
-              <label className="absolute -bottom-0.5 -right-0.5 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-2 border-background bg-foreground text-background shadow-md transition hover:opacity-90">
+              <label className="absolute -bottom-0.5 -right-0.5 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-2 border-gray-200 bg-gray-900 text-white shadow-md transition hover:opacity-90 dark:border-gray-200 dark:bg-white dark:text-black">
                 <span className="sr-only">Upload photo</span>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -173,7 +173,7 @@ export function NodeDetailPanel(props: {
               onChange={(e) => setPanelName(e.target.value)}
               aria-label="Name"
               rows={2}
-              className="mt-0.5 w-full resize-none border-b border-gray-300 bg-transparent px-1 py-0.5 text-base font-semibold text-foreground outline-none focus:border-blue-400 whitespace-normal break-words"
+              className="mt-0.5 w-full resize-none border-b border-gray-300 bg-transparent px-1 py-0.5 text-base font-semibold text-gray-900 outline-none focus:border-blue-400 whitespace-normal break-words dark:text-white"
             />
             {panelRelationTags.length ? (
               <div className="mt-1 flex flex-wrap gap-1.5">
@@ -184,7 +184,7 @@ export function NodeDetailPanel(props: {
                 ))}
               </div>
             ) : (
-              <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">
+              <p className="mt-1 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                 No relationship tags
               </p>
             )}
@@ -197,9 +197,9 @@ export function NodeDetailPanel(props: {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">{children}</div>
 
-      <div className="border-t p-3 dark:border-zinc-800 space-y-2">
+      <div className="space-y-2 border-t border-gray-200 p-3 dark:border-gray-800">
         {panelSaveState === 'saved' ? (
-          <p className="text-xs text-zinc-500 transition-opacity duration-300">
+          <p className="text-xs text-gray-400 transition-opacity duration-300 dark:text-gray-500">
             Saved ✓
           </p>
         ) : null}
