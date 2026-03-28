@@ -2162,16 +2162,6 @@ function FriendGraphInner({
     }
   }, [])
 
-  const hint = (
-    <p className="pointer-events-none absolute left-3 top-3 z-10 max-w-[min(24rem,calc(100%-1.5rem))] rounded-lg border border-zinc-200/80 bg-background/90 px-3 py-2 text-[11px] text-zinc-600 shadow-sm backdrop-blur dark:border-zinc-700 dark:text-zinc-400">
-      Line colors show <span className="font-medium">communities</span>. Hold{' '}
-      <kbd className="rounded border border-zinc-300 px-1 dark:border-zinc-600">Shift</kbd>{' '}
-      to connect people. Drag nodes; drop into another region to change location.
-      Click an edge or the legend to highlight a community; click a person to
-      highlight their ties.
-    </p>
-  )
-
   if (loading && people.length === 0 && locations.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
@@ -2190,7 +2180,6 @@ function FriendGraphInner({
           {error}
         </div>
       ) : null}
-      {view === 'graph' ? hint : null}
       <div className="flex shrink-0 items-center justify-end gap-3 border-b border-zinc-200 bg-background px-3 py-2 dark:border-zinc-800">
         <div className="flex shrink-0 items-center gap-1.5">
           <button
@@ -2239,7 +2228,7 @@ function FriendGraphInner({
             showLeftPanel ? 'w-56 opacity-100' : 'pointer-events-none w-0 opacity-0'
           }`}
         >
-          <div className="box-border h-full w-56 min-h-0 overflow-y-auto p-2 pr-1">
+          <div className="communities-panel box-border h-full w-56 min-h-0 overflow-y-auto p-2 pr-1">
             <CommunitiesLegend
               communities={communities.map((c) => ({
                 id: c.id,

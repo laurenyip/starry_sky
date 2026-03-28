@@ -69,6 +69,41 @@ body {
   animation: scroll-right 40s linear infinite;
 }
 
+/* Left communities/locations panel — scrollbar only when needed, minimal thumb */
+.communities-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.communities-panel::-webkit-scrollbar {
+  width: 4px;
+}
+
+.communities-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.communities-panel::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+}
+
+.communities-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.dark .communities-panel {
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.dark .communities-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark .communities-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 @layer base {
   button:not(:disabled),
   a,

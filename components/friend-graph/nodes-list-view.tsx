@@ -123,8 +123,8 @@ export function NodesListView({
         onClick={() => onSortChange(mode)}
         className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors duration-150 ease-out ${
           active
-            ? 'border-transparent bg-gray-900 text-white dark:border-transparent dark:bg-white dark:text-black'
-            : 'border-gray-300 text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/5'
+            ? 'border-transparent bg-zinc-900 text-white dark:border-transparent dark:bg-zinc-100 dark:text-zinc-900'
+            : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800/80'
         }`}
       >
         {label}
@@ -133,9 +133,9 @@ export function NodesListView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col bg-white transition-colors duration-200 dark:bg-gray-900">
-      <div className="shrink-0 border-b border-gray-200 px-4 pt-3 pb-2 dark:border-gray-800">
-        <p className="text-xs text-gray-400 dark:text-gray-500">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-background transition-colors duration-200">
+      <div className="shrink-0 border-b border-zinc-200 px-4 pt-3 pb-2 dark:border-zinc-800">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
           {rows.length} {rows.length === 1 ? 'person' : 'people'}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -150,27 +150,27 @@ export function NodesListView({
         onChange={(e) => onSearchChange(e.target.value)}
         placeholder="Search people..."
         autoComplete="off"
-        className="w-full border-b border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition-colors duration-200 placeholder-gray-400 dark:border-gray-800 dark:bg-transparent dark:text-white dark:placeholder-gray-500"
+        className="w-full border-b border-zinc-200 bg-background px-4 py-2.5 text-sm text-foreground outline-none transition-colors duration-200 placeholder:text-zinc-400 dark:border-zinc-800 dark:placeholder:text-zinc-500"
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {showEmpty ? (
           <div className="flex h-full min-h-[12rem] flex-col items-center justify-center gap-2 px-6 py-12 text-center">
             <span
-              className="text-3xl text-gray-400 dark:text-gray-600"
+              className="text-3xl text-zinc-400 dark:text-zinc-600"
               aria-hidden
             >
               ✦
             </span>
-            <p className="text-sm text-gray-400 dark:text-gray-400">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
               No people yet
             </p>
-            <p className="max-w-xs text-xs text-gray-500 dark:text-gray-600">
+            <p className="max-w-xs text-xs text-zinc-500 dark:text-zinc-500">
               Add someone in Graph view to get started
             </p>
           </div>
         ) : showNoMatch ? (
-          <p className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          <p className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
             No results for &apos;{q}&apos;
           </p>
         ) : (
@@ -185,21 +185,17 @@ export function NodesListView({
                   <button
                     type="button"
                     onClick={() => onSelectPerson(person)}
-                    className="group relative flex w-full origin-left cursor-pointer items-center gap-3 border-b border-gray-100 px-4 py-2.5 text-left transition-transform duration-200 ease-out hover:scale-[1.01] dark:border-gray-800/60"
+                    className="group relative flex w-full origin-left cursor-pointer items-center gap-3 border-b border-zinc-200/80 px-4 py-2.5 text-left transition-transform duration-200 ease-out hover:scale-[1.01] dark:border-zinc-800/80"
                   >
                     <div
-                      className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 ease-in-out group-hover:opacity-100"
-                      style={{
-                        background:
-                          'radial-gradient(ellipse at 0% 50%, rgba(167,139,250,0.06) 0%, transparent 70%)',
-                      }}
+                      className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_0%_50%,rgba(167,139,250,0.07),transparent_70%)] opacity-0 transition-opacity duration-300 ease-in-out group-hover:opacity-100 dark:bg-[radial-gradient(ellipse_at_0%_50%,rgba(167,139,250,0.12),transparent_70%)]"
                       aria-hidden
                     />
                     <div className="relative z-10 flex min-w-0 flex-1 items-center gap-3">
                       <span
                         className={`relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 text-xs font-semibold ${
                           person.avatar_url
-                            ? 'border-gray-200 dark:border-white/15'
+                            ? 'border-zinc-200 dark:border-white/15'
                             : ''
                         }`}
                         style={
@@ -222,7 +218,7 @@ export function NodesListView({
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="break-words text-sm font-medium text-gray-900 dark:text-white">
+                        <p className="break-words text-sm font-medium text-foreground">
                           {person.name}
                         </p>
                         {showTags.length > 0 ? (
@@ -233,7 +229,7 @@ export function NodesListView({
                               </span>
                             ))}
                             {more > 0 ? (
-                              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
                                 +{more} more
                               </span>
                             ) : null}
@@ -241,7 +237,7 @@ export function NodesListView({
                         ) : null}
                       </div>
                       <span
-                        className="shrink-0 text-lg text-gray-300 transition-colors duration-200 dark:text-gray-600 group-hover:text-gray-600 dark:group-hover:text-gray-300"
+                        className="shrink-0 text-lg text-zinc-400 transition-colors duration-200 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300"
                         aria-hidden
                       >
                         ›
