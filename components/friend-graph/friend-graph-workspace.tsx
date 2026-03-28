@@ -9,7 +9,10 @@ import { ConstellationOverlay } from '@/components/friend-graph/constellation-ov
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
 import { NodeDetailPanel } from '@/components/friend-graph/node-detail-panel'
 import { NodePhotoGallery } from '@/components/friend-graph/node-photo-gallery'
-import { NodesListView } from '@/components/friend-graph/nodes-list-view'
+import {
+  NodesListView,
+  type ListSortMode,
+} from '@/components/friend-graph/nodes-list-view'
 import { PersonNode } from '@/components/friend-graph/person-node'
 import {
   dedupeEdgesForGraph,
@@ -340,6 +343,7 @@ function FriendGraphInner({
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
   const [view, setView] = useState<'graph' | 'list'>('graph')
   const [listSearch, setListSearch] = useState('')
+  const [listSort, setListSort] = useState<ListSortMode>('az')
 
   const [addConnectionOpen, setAddConnectionOpen] = useState(false)
   const [connectPersonAId, setConnectPersonAId] = useState('')
@@ -456,15 +460,59 @@ function FriendGraphInner({
     [people]
   )
 
+  const tagsByPersonId = useMemo(() => {
+    const m = new Map<string, string[]>()
+    if (!selfNodeId) return m
+    const edges = dedupeEdgesForGraph(dbEdges)
+    for (const p of people) {
+      if (p.is_self) continue
+      const edge = edges.find(
+        (e) =>
+          pairKey(e.source_node_id, e.target_node_id) ===
+          pairKey(selfNodeId, p.id)
+      )
+      const tagsRaw = (edge as { relation_types?: unknown } | undefined)
+        ?.relation_types
+      let tags: string[] = []
+      if (Array.isArray(tagsRaw)) {
+        tags = normalizeRelationTags(tagsRaw as string[])
+      } else {
+        tags = normalizeRelationTags(
+          legacyRelationTypeToTags(edge?.relation_type ?? null)
+        )
+      }
+      m.set(p.id, tags)
+    }
+    return m
+  }, [people, selfNodeId, dbEdges])
+
+  const totalNonSelfPeople = useMemo(
+    () => people.filter((p) => !p.is_self).length,
+    [people]
+  )
+
   const listRows = useMemo(() => {
     const q = listSearch.trim().toLowerCase()
-    return people
-      .filter((p) => !p.is_self)
-      .filter((p) => !q || p.name.toLowerCase().includes(q))
-      .sort((a, b) =>
+    let rows = people.filter((p) => !p.is_self)
+    if (q) rows = rows.filter((p) => p.name.toLowerCase().includes(q))
+    const sorted = [...rows]
+    if (listSort === 'az') {
+      sorted.sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
       )
-  }, [people, listSearch])
+    } else if (listSort === 'za') {
+      sorted.sort((a, b) =>
+        b.name.localeCompare(a.name, undefined, { sensitivity: 'base' })
+      )
+    } else {
+      sorted.sort((a, b) => {
+        const ta = a.created_at ?? ''
+        const tb = b.created_at ?? ''
+        return tb.localeCompare(ta)
+      })
+    }
+    return sorted
+  }, [people, listSearch, listSort])
 
   const loadedRelationTagsForPanel = useMemo(() => {
     if (!selectedPerson || selectedPerson.is_self || !selfNodeId) return [] as string[]
@@ -1933,15 +1981,26 @@ function FriendGraphInner({
         </div>
       ) : null}
       {view === 'graph' ? hint : null}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-background px-2 py-2 dark:border-zinc-800">
-        <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200 bg-background px-3 py-2 dark:border-zinc-800">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {profileUsernameForShare ? (
+            <button
+              type="button"
+              onClick={() => setShareGraphOpen(true)}
+              className="shrink-0 cursor-pointer rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-medium text-foreground transition-transform hover:scale-105 hover:bg-zinc-100 sm:text-sm dark:border-zinc-600 dark:hover:bg-zinc-800"
+            >
+              Share
+            </button>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={() => setView('graph')}
-            className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               view === 'graph'
-                ? 'bg-zinc-200 text-foreground dark:bg-zinc-700 dark:text-zinc-100'
-                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                ? 'bg-white text-black dark:bg-white dark:text-black'
+                : 'border border-gray-700 bg-transparent text-gray-400 hover:bg-white/5 dark:border-gray-700 dark:text-gray-400'
             }`}
           >
             ⬡ Graph
@@ -1949,24 +2008,15 @@ function FriendGraphInner({
           <button
             type="button"
             onClick={() => setView('list')}
-            className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               view === 'list'
-                ? 'bg-zinc-200 text-foreground dark:bg-zinc-700 dark:text-zinc-100'
-                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                ? 'bg-white text-black dark:bg-white dark:text-black'
+                : 'border border-gray-700 bg-transparent text-gray-400 hover:bg-white/5 dark:border-gray-700 dark:text-gray-400'
             }`}
           >
             ≡ List
           </button>
         </div>
-        {profileUsernameForShare ? (
-          <button
-            type="button"
-            onClick={() => setShareGraphOpen(true)}
-            className="cursor-pointer rounded-md border border-zinc-300 px-2.5 py-1.5 text-xs font-medium text-foreground transition-transform hover:scale-105 hover:bg-zinc-100 sm:text-sm dark:border-zinc-600 dark:hover:bg-zinc-800"
-          >
-            Share
-          </button>
-        ) : null}
       </div>
       <div
         className={`relative min-h-0 w-full flex-1 flex flex-col ${
@@ -2208,9 +2258,14 @@ function FriendGraphInner({
       ) : (
         <NodesListView
           rows={listRows}
+          totalNonSelfCount={totalNonSelfPeople}
           searchQuery={listSearch}
           onSearchChange={setListSearch}
           onSelectPerson={selectPersonFromList}
+          sort={listSort}
+          onSortChange={setListSort}
+          tagsByPersonId={tagsByPersonId}
+          tagPillClassName={relationTagPillClass}
         />
       )}
       </div>

@@ -12,13 +12,13 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
 export const metadata: Metadata = {
   ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
   title: {
-    default: 'FriendGraph — map your relationships',
-    template: '%s · FriendGraph',
+    default: 'Starmap — map your relationships',
+    template: '%s · Starmap',
   },
   description:
-    'Build a visual graph of people and how they connect. Share your public FriendGraph with a unique profile link.',
+    'Build a visual graph of people and how they connect. Share your public Starmap profile with a unique profile link.',
   openGraph: {
-    title: 'FriendGraph',
+    title: 'Starmap',
     description:
       'Build a visual graph of people and how they connect.',
     type: 'website',

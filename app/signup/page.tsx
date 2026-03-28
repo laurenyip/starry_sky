@@ -88,7 +88,7 @@ export default function SignupPage() {
         Create an account
       </h1>
       <p className="mt-1 text-center text-sm text-zinc-600 dark:text-zinc-400">
-        Join FriendGraph
+        Join Starmap
       </p>
 
       <form
