@@ -18,14 +18,17 @@ export function NodeDetailPanel(props: {
   panelRelationTags: string[]
   relationTagPillClass: (tag: string) => string
 
-  /** Multi-photo gallery (replaces legacy strip + lightbox). */
-  photoGallery: React.ReactNode
+  /** Optional; gallery may live in the scroll body instead. */
+  photoGallery?: React.ReactNode
 
   // Body
   children: React.ReactNode
 
+  /** Inline save feedback below name (not the footer button state). */
+  saveStatus: 'idle' | 'saving' | 'saved' | 'error'
+  onPanelNameBlur?: () => void
+
   // Footer
-  panelSaveState: 'idle' | 'saved' | 'error'
   panelErr: string | null
   panelSaving: boolean
   onSave?: () => void
@@ -48,7 +51,8 @@ export function NodeDetailPanel(props: {
     relationTagPillClass,
     photoGallery,
     children,
-    panelSaveState,
+    saveStatus,
+    onPanelNameBlur,
     panelErr,
     panelSaving,
     onSave,
@@ -60,19 +64,21 @@ export function NodeDetailPanel(props: {
   if (!open || !node) return null
 
   return (
-    <aside className="fixed top-16 right-0 bottom-0 z-30 flex w-72 sm:w-80 flex-col border-l border-gray-200 bg-white shadow-2xl transition-colors duration-200 dark:border-gray-800 dark:bg-gray-900">
-      <div className="border-b border-gray-200 p-3 dark:border-gray-800">
+    <aside
+      className="fixed top-16 right-0 bottom-0 z-20 flex w-72 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 text-sm [&_input]:text-base [&_select]:text-base [&_textarea]:text-base">
         <div className="flex justify-end">
           <button
             type="button"
-            className="text-2xl leading-none text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300"
+            className="text-xl leading-none text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300"
             onClick={onClose}
             aria-label="Close"
           >
             ×
           </button>
         </div>
-        <div className="mt-1 flex flex-col items-center gap-2 sm:flex-row sm:items-start">
+        <div className="mt-1 flex flex-row items-start gap-3">
           <div className="relative shrink-0">
             <div
               className={`group relative flex h-14 w-14 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gray-100 transition-shadow dark:bg-gray-800 ${
@@ -85,13 +91,13 @@ export function NodeDetailPanel(props: {
                 <Image
                   src={node.avatar_url}
                   alt=""
-                  width={80}
-                  height={80}
+                  width={56}
+                  height={56}
                   className="h-full w-full object-cover"
                   unoptimized
                 />
               ) : (
-                <span className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                <span className="text-xl font-bold text-gray-800 dark:text-gray-200">
                   {personDisplayInitial(panelName || node.name)}
                 </span>
               )}
@@ -101,7 +107,7 @@ export function NodeDetailPanel(props: {
                   aria-busy
                 >
                   <span
-                    className="h-7 w-7 animate-spin rounded-full border-2 border-gray-400 border-t-transparent dark:border-gray-500"
+                    className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent dark:border-gray-500"
                     role="status"
                   />
                 </div>
@@ -129,7 +135,7 @@ export function NodeDetailPanel(props: {
                   </svg>
                 </div>
               )}
-              <label className="absolute -bottom-0.5 -right-0.5 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-2 border-gray-200 bg-gray-900 text-white shadow-md transition hover:opacity-90 dark:border-gray-200 dark:bg-white dark:text-black">
+              <label className="absolute -bottom-0.5 -right-0.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 border-gray-200 bg-gray-900 text-white shadow-md transition hover:opacity-90 dark:border-gray-200 dark:bg-white dark:text-black">
                 <span className="sr-only">Upload photo</span>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -167,16 +173,39 @@ export function NodeDetailPanel(props: {
               </label>
             </div>
           </div>
-          <div className="w-full flex-1 text-center sm:text-left">
+          <div className="min-w-0 flex-1 text-left">
             <textarea
               value={panelName}
               onChange={(e) => setPanelName(e.target.value)}
+              onBlur={() => onPanelNameBlur?.()}
               aria-label="Name"
               rows={2}
               className="mt-0.5 w-full resize-none border-b border-gray-300 bg-transparent px-1 py-0.5 text-base font-semibold text-gray-900 outline-none focus:border-blue-400 whitespace-normal break-words dark:text-white"
             />
+            {saveStatus !== 'idle' ? (
+              <p
+                className={`mt-1 min-h-[1em] text-sm transition-opacity duration-200 ${
+                  saveStatus === 'saving'
+                    ? 'text-gray-400 dark:text-gray-500'
+                    : saveStatus === 'saved'
+                      ? 'text-green-500 dark:text-green-400'
+                      : saveStatus === 'error'
+                        ? 'text-red-400 dark:text-red-400'
+                        : 'opacity-0'
+                }`}
+                aria-live="polite"
+              >
+                {saveStatus === 'saving'
+                  ? 'Saving...'
+                  : saveStatus === 'saved'
+                    ? 'Saved ✓'
+                    : saveStatus === 'error'
+                      ? 'Failed to save'
+                      : ''}
+              </p>
+            ) : null}
             {panelRelationTags.length ? (
-              <div className="mt-1 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {panelRelationTags.map((t) => (
                   <span key={t} className={relationTagPillClass(t)}>
                     {t}
@@ -184,62 +213,53 @@ export function NodeDetailPanel(props: {
                 ))}
               </div>
             ) : (
-              <p className="mt-1 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <p className="mt-2 text-xs uppercase tracking-widest text-gray-400">
                 No relationship tags
               </p>
             )}
           </div>
         </div>
+        {photoGallery ? <div className="mt-3">{photoGallery}</div> : null}
 
-        {photoGallery}
-        <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700" />
+        <div className="mt-3 space-y-3">{children}</div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">{children}</div>
-
-      <div className="space-y-2 border-t border-gray-200 p-3 dark:border-gray-800">
-        {panelSaveState === 'saved' ? (
-          <p className="text-xs text-gray-400 transition-opacity duration-300 dark:text-gray-500">
-            Saved ✓
-          </p>
-        ) : null}
-        {panelSaveState === 'error' ? (
-          <p className="text-xs text-red-600">Failed to save</p>
-        ) : null}
+      <div className="flex-shrink-0 border-t border-gray-200 bg-white p-3 pt-2 dark:border-gray-800 dark:bg-gray-900">
         {panelErr ? (
-          <p className="text-sm text-red-600" role="alert">
+          <p className="mb-2 text-sm text-red-600 dark:text-red-400" role="alert">
             {panelErr}
           </p>
         ) : null}
-        {onSave ? (
-          <button
-            type="button"
-            disabled={panelSaving}
-            className="w-full rounded-md bg-foreground py-1.5 text-sm text-background disabled:opacity-60"
-            onClick={onSave}
-          >
-            {panelSaving ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-background/80 border-t-transparent" />
-                Saving...
-              </span>
-            ) : (
-              saveLabel ?? 'Save'
-            )}
-          </button>
-        ) : null}
-        {canDelete ? (
-          <button
-            type="button"
-            disabled={panelSaving}
-            className="w-full rounded-md border border-red-200 py-1 text-sm text-red-700 dark:border-red-900 disabled:opacity-40"
-            onClick={onDelete}
-          >
-            Delete person
-          </button>
-        ) : null}
+        <div className="flex flex-col gap-2">
+          {onSave ? (
+            <button
+              type="button"
+              disabled={panelSaving}
+              className="w-full rounded-lg bg-gray-900 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60 dark:bg-white dark:text-gray-900"
+              onClick={onSave}
+            >
+              {panelSaving ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/80 border-t-transparent dark:border-gray-900/80" />
+                  Saving...
+                </span>
+              ) : (
+                saveLabel ?? 'Save changes'
+              )}
+            </button>
+          ) : null}
+          {canDelete ? (
+            <button
+              type="button"
+              disabled={panelSaving}
+              className="w-full rounded-lg border border-red-200 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:hover:bg-red-950/30"
+              onClick={onDelete}
+            >
+              Delete person
+            </button>
+          ) : null}
+        </div>
       </div>
     </aside>
   )
 }
-

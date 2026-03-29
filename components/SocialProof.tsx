@@ -148,7 +148,7 @@ export function SocialProof() {
   }, [clearScramble, runScrambleTo])
 
   return (
-    <section className="flex w-full flex-col items-center gap-8 overflow-hidden py-16">
+    <section className="flex w-full min-w-0 flex-col items-center gap-8 overflow-hidden py-16">
       <p
         className={`max-w-[min(100%,42rem)] text-center text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500 sm:text-sm ${
           isScrambling ? 'font-mono' : 'font-sans'

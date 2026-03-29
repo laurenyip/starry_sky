@@ -1,0 +1,26 @@
+{
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "starrysky-indol.vercel.app"
+        }
+      ],
+      "destination": "https://starmap.lol/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.starmap.lol"
+        }
+      ],
+      "destination": "https://starmap.lol/:path*",
+      "permanent": true
+    }
+  ]
+}

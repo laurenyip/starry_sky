@@ -1,21 +1,15 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useIsDark } from '@/hooks/use-is-dark'
 import type { ForceGraphMethods } from 'react-force-graph-2d'
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
   loading: () => (
     <div
-      className="h-[320px] w-full animate-pulse rounded-2xl bg-[#080B14] md:h-[480px]"
+      className="h-[320px] w-full animate-pulse rounded-2xl bg-gray-50 dark:bg-[#080B14] md:h-[480px]"
       aria-hidden
     />
   ),
@@ -132,12 +126,6 @@ const DEMO_EDGES = [
   { source: 'alex', target: 'finn' },
 ] as const
 
-const DEMO_COMMUNITIES = [
-  { id: 'friends', name: 'Close Friends', color: '#A78BFA' },
-  { id: 'work', name: 'Work', color: '#34D399' },
-  { id: 'family', name: 'Family', color: '#FB7185' },
-] as const
-
 const GROUP_COLORS: Record<string, string> = {
   self: '#FFFFFF',
   friends: '#A78BFA',
@@ -169,15 +157,6 @@ type GraphNode = {
   vy?: number
 }
 
-function tagColor(tag: string): string {
-  return TAG_COLORS[tag] ?? '#94A3B8'
-}
-
-function communityForGroup(group: DemoGroup) {
-  if (group === 'self') return DEMO_COMMUNITIES[0]
-  return DEMO_COMMUNITIES.find((c) => c.id === group) ?? DEMO_COMMUNITIES[0]
-}
-
 export function DemoGraph() {
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined)
   const graphWrapRef = useRef<HTMLDivElement>(null)
@@ -197,6 +176,11 @@ export function DemoGraph() {
   const [dims, setDims] = useState({ width: 600, height: 320 })
   const [activeNodeId, setActiveNodeId] = useState('maya')
   const [sectionVisible, setSectionVisible] = useState(false)
+  const isDark = useIsDark()
+  const isDarkRef = useRef(isDark)
+  isDarkRef.current = isDark
+
+  const graphBg = isDark ? '#080B14' : '#F9FAFB'
 
   const graphData = useMemo(() => {
     const nodes: GraphNode[] = DEMO_NODES.map((n, i) => ({
@@ -212,11 +196,6 @@ export function DemoGraph() {
   const nodeById = useMemo(
     () => new Map(graphData.nodes.map((n) => [n.id, n])),
     [graphData.nodes]
-  )
-
-  const nonYouIds = useMemo(
-    () => DEMO_NODES.filter((n) => n.id !== 'you').map((n) => n.id),
-    []
   )
 
   useEffect(() => {
@@ -284,7 +263,8 @@ export function DemoGraph() {
           ? (link.source as GraphNode)
           : nodeById.get(String(link.source))
       const g = (src?.group ?? 'friends') as DemoGroup
-      const hex = GROUP_COLORS[g] ?? '#A78BFA'
+      let hex = GROUP_COLORS[g] ?? '#A78BFA'
+      if (g === 'self' && !isDarkRef.current) hex = '#7C3AED'
       if (hex.length === 7) return `${hex}30`
       return hex
     },
@@ -294,7 +274,10 @@ export function DemoGraph() {
   const nodeCanvasObject = useCallback(
     (node: object, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const n = node as GraphNode
-      const color = GROUP_COLORS[n.group] ?? '#A78BFA'
+      const dark = isDarkRef.current
+      const baseColor = GROUP_COLORS[n.group] ?? '#A78BFA'
+      const color =
+        n.group === 'self' ? (dark ? '#FFFFFF' : '#7C3AED') : baseColor
       const radius = n.group === 'self' ? 14 : 9
       const pulse =
         Math.sin(Date.now() / 900 + n.pulseIndex * 1.4) * 0.4 + 0.7
@@ -327,10 +310,15 @@ export function DemoGraph() {
           : `${fontPx}px Inter, system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
-      ctx.fillStyle =
-        n.group === 'self'
+      if (n.group === 'self') {
+        ctx.fillStyle = dark
           ? 'rgba(15, 23, 42, 0.9)'
-          : 'rgba(255, 255, 255, 0.85)'
+          : 'rgba(255, 255, 255, 0.95)'
+      } else {
+        ctx.fillStyle = dark
+          ? 'rgba(255, 255, 255, 0.85)'
+          : 'rgba(17, 24, 39, 0.88)'
+      }
       ctx.fillText(n.name, x, y + radius + 6 / globalScale)
 
       if (activeNodeIdRef.current === n.id) {
@@ -357,7 +345,9 @@ export function DemoGraph() {
           if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
           ctx.beginPath()
           ctx.arc(p.x, p.y, star.r, 0, 2 * Math.PI)
-          ctx.fillStyle = `rgba(255,255,255,${clamped})`
+          ctx.fillStyle = isDarkRef.current
+            ? `rgba(255,255,255,${clamped})`
+            : `rgba(75,85,99,${clamped * 0.55})`
           ctx.fill()
         }
       }
@@ -386,11 +376,6 @@ export function DemoGraph() {
     }
   }, [])
 
-  const activeProfile = useMemo(
-    () => DEMO_NODES.find((n) => n.id === activeNodeId) ?? DEMO_NODES[1],
-    [activeNodeId]
-  )
-
   return (
     <div
       ref={sectionRef}
@@ -398,14 +383,12 @@ export function DemoGraph() {
         sectionVisible ? 'opacity-100' : 'opacity-0'
       }`}
     >
-      <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-6 px-4 md:grid-cols-5">
+      <div className="mx-auto w-full max-w-5xl px-4">
         <div
           ref={graphWrapRef}
-          className="h-[320px] overflow-hidden rounded-2xl border border-white/[0.08] md:col-span-3 md:h-[480px]"
+          className="h-[320px] overflow-hidden rounded-2xl border border-gray-200 shadow-[0_0_60px_rgba(139,92,246,0.08),0_0_120px_rgba(52,211,153,0.04)] dark:border-white/[0.08] dark:shadow-[0_0_60px_rgba(139,92,246,0.12),0_0_120px_rgba(52,211,153,0.06)] md:h-[480px]"
           style={{
-            backgroundColor: '#080B14',
-            boxShadow:
-              '0 0 60px rgba(139,92,246,0.12), 0 0 120px rgba(52,211,153,0.06)',
+            backgroundColor: graphBg,
           }}
         >
           <ForceGraph2D
@@ -413,7 +396,7 @@ export function DemoGraph() {
             width={dims.width}
             height={dims.height}
             graphData={graphData}
-            backgroundColor="#080B14"
+            backgroundColor={graphBg}
             autoPauseRedraw={false}
             enablePointerInteraction={false}
             enableZoomInteraction={false}
@@ -430,156 +413,6 @@ export function DemoGraph() {
             onEngineStop={onEngineStop}
             onNodeClick={() => {}}
           />
-        </div>
-
-        <DemoNodeCard
-          key={activeProfile.id}
-          node={activeProfile}
-          nonYouIds={nonYouIds}
-          activeNodeId={activeNodeId}
-        />
-      </div>
-    </div>
-  )
-}
-
-type ProfileNode = (typeof DEMO_NODES)[number]
-
-function DemoNodeCard({
-  node,
-  nonYouIds,
-  activeNodeId,
-}: {
-  node: ProfileNode
-  activeNodeId: string
-  nonYouIds: readonly string[]
-}) {
-  const innerRef = useRef<HTMLDivElement>(null)
-
-  useLayoutEffect(() => {
-    const el = innerRef.current
-    if (!el) return
-    el.animate(
-      [
-        { opacity: 0, transform: 'translateY(8px)' },
-        { opacity: 1, transform: 'translateY(0)' },
-      ],
-      { duration: 400, easing: 'ease-out', fill: 'both' }
-    )
-  }, [node.id])
-
-  const group = node.group as DemoGroup
-  const gc = GROUP_COLORS[group] ?? '#A78BFA'
-  const community = communityForGroup(group)
-  const initial = node.name.slice(0, 1).toUpperCase()
-
-  return (
-    <div className="flex h-[320px] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0D1117] p-5 md:col-span-2 md:h-[480px]">
-      <div ref={innerRef} className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="flex gap-3">
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold"
-            style={{
-              backgroundColor: `${gc}33`,
-              border: `1px solid ${gc}`,
-              color: gc,
-            }}
-          >
-            {initial}
-          </div>
-          <div className="min-w-0 flex-1">
-            <h3 className="text-lg font-semibold text-white">{node.name}</h3>
-            {'location' in node && node.location ? (
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-400">
-                <span aria-hidden>📍</span>
-                {node.location}
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        {node.tags.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {node.tags.map((tag) => {
-              const tc = tagColor(tag)
-              return (
-                <span
-                  key={tag}
-                  className="rounded-full px-2 py-0.5 text-xs font-medium"
-                  style={{
-                    backgroundColor: `${tc}22`,
-                    color: tc,
-                    border: `1px solid ${tc}44`,
-                  }}
-                >
-                  {tag}
-                </span>
-              )
-            })}
-          </div>
-        ) : null}
-
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-          {'birthday' in node && node.birthday ? (
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] tracking-widest text-gray-500 uppercase">
-                🎂 Birthday
-              </span>
-              <span className="text-sm text-gray-200">{node.birthday}</span>
-            </div>
-          ) : null}
-          {'met' in node && node.met ? (
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] tracking-widest text-gray-500 uppercase">
-                ✦ Met
-              </span>
-              <span className="text-sm text-gray-200">{node.met}</span>
-            </div>
-          ) : null}
-          {'note' in node && node.note ? (
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] tracking-widest text-gray-500 uppercase">
-                📝 Note
-              </span>
-              <span className="text-sm text-gray-200">{node.note}</span>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mt-auto flex flex-col gap-2 pt-2">
-          <div
-            className="rounded-full px-3 py-1 text-xs"
-            style={{
-              alignSelf: 'flex-start',
-              backgroundColor: `${community.color}15`,
-              border: `1px solid ${community.color}30`,
-              color: community.color,
-            }}
-          >
-            ● {community.name}
-          </div>
-
-          <div className="flex justify-center gap-1.5 pt-2">
-            {nonYouIds.map((id) => {
-              const n = DEMO_NODES.find((x) => x.id === id)
-              const c =
-                n && n.group !== 'self'
-                  ? GROUP_COLORS[n.group]
-                  : '#6B7280'
-              const active = id === activeNodeId
-              return (
-                <span
-                  key={id}
-                  className="h-2 w-2 rounded-full"
-                  style={{
-                    backgroundColor: active ? c : 'transparent',
-                    border: `1px solid ${active ? c : '#6B7280'}`,
-                  }}
-                  aria-hidden
-                />
-              )
-            })}
-          </div>
         </div>
       </div>
     </div>

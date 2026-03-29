@@ -6,6 +6,8 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
 
+  // Use the incoming request origin (not a hardcoded domain) so this works on
+  // localhost, preview URLs, and https://starmap.lol without further changes.
   const redirectResponse = NextResponse.redirect(
     new URL("/dashboard", requestUrl.origin)
   )

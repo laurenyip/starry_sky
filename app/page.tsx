@@ -30,10 +30,10 @@ export default async function Home() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-16 pt-12 sm:px-6 sm:pt-20">
+    <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-16 pt-12 sm:px-6 sm:pt-20">
         {/* SECTION 1 — Hero */}
-        <section className="flex flex-col items-center text-center">
+        <section className="flex flex-col items-center rounded-2xl bg-gray-50 px-4 py-16 text-center dark:bg-[#080B14] sm:px-6">
           <p className="text-sm tracking-widest uppercase text-gray-400 dark:text-gray-500">
             welcome to
           </p>
@@ -41,24 +41,10 @@ export default async function Home() {
             <Logo textClassName="text-5xl tracking-tight md:text-7xl" />
           </div>
           <CassiopeiaConstellation />
-        </section>
-
-        {/* Demo + tagline (repositioned) */}
-        <section className="mt-16 flex w-full flex-col items-center gap-6 px-0 py-8 sm:py-10">
-          <p className="text-sm tracking-widest text-gray-400 uppercase dark:text-gray-500">
-            your world, mapped
-          </p>
-          <div className="w-full max-w-3xl">
-            <DemoGraph />
-          </div>
-          <p className="max-w-md text-center text-xs text-gray-500 dark:text-gray-400">
-            Visualise your relationships, communities, and connections in one
-            living map.
-          </p>
-          <div className="mt-4 flex flex-col items-center gap-3">
+          <div className="mt-10 flex flex-col items-center gap-3">
             <Link
               href="/signup"
-              className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 font-medium text-background transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 dark:bg-foreground dark:text-background dark:hover:opacity-90"
             >
               <svg
                 width="16"
@@ -73,39 +59,57 @@ export default async function Home() {
               </svg>
               <span>start now</span>
             </Link>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Already have an account?{' '}
               <Link
                 href="/login"
-                className="text-gray-600 underline decoration-gray-400 underline-offset-2 transition-colors hover:text-foreground dark:text-gray-300 dark:hover:text-white"
+                className="text-gray-700 underline decoration-gray-400 underline-offset-2 transition-colors hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
               >
                 Sign in
               </Link>
               {' · '}
               <Link
                 href="/dashboard"
-                className="text-gray-600 underline decoration-gray-400 underline-offset-2 transition-colors hover:text-foreground dark:text-gray-300 dark:hover:text-white"
+                className="text-gray-700 underline decoration-gray-400 underline-offset-2 transition-colors hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
               >
                 Dashboard
               </Link>
             </p>
           </div>
+          <p className="mt-2 text-sm tracking-wide text-gray-400 dark:text-gray-500">
+            Your world, mapped
+          </p>
         </section>
 
-        {/* SECTION 2 — Feature cards */}
-        <div className="mt-8">
+        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+
+        {/* Demo graph */}
+        <section className="flex w-full min-w-0 flex-col items-center py-16">
+          <div className="w-full min-w-0 max-w-5xl">
+            <DemoGraph />
+          </div>
+        </section>
+
+        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+
+        {/* Feature cards */}
+        <div className="py-16">
           <LandingFeatureCards />
         </div>
 
-        {/* SECTION 3 — Social proof */}
+        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+
+        {/* Social proof */}
         <SocialProof />
 
-        {/* SECTION 4 — Why */}
-        <section className="mx-auto mt-16 max-w-xl px-2 text-center">
+        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+
+        {/* Why */}
+        <section className="mx-auto max-w-xl px-2 py-16 text-center">
           <p className="text-xs tracking-widest text-gray-400 uppercase dark:text-gray-500">
             why starmap exists
           </p>
-          <div className="mt-6 text-sm leading-relaxed text-gray-500 text-center dark:text-gray-400">
+          <div className="mt-6 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
             <p className="mb-4">
               I made Starmap because I wanted to be a better friend.
             </p>
@@ -115,36 +119,38 @@ export default async function Home() {
               we keep saying we&apos;ll make. I wanted to see how the people in my
               life connect to each other, and hold onto the moments that matter.
             </p>
-            <p>
-              This is a map of the people who make up your world.
-            </p>
+            <p>This is a map of the people who make up your world.</p>
           </div>
         </section>
 
-        {/* SECTION 5 — Contact */}
-        <p className="mx-auto mt-12 text-center text-sm text-gray-500 dark:text-gray-400">
-          questions or feedback →{' '}
-          <a
-            href="mailto:support@starmap.lol"
-            className="text-gray-400 underline underline-offset-4 transition-colors hover:text-gray-200"
-          >
-            support@starmap.lol
-          </a>
-        </p>
+        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+
+        {/* Contact */}
+        <section className="mx-auto max-w-xl px-2 py-16 text-center">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            questions or feedback →{' '}
+            <a
+              href="mailto:support@starmap.lol"
+              className="text-gray-600 underline underline-offset-4 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              support@starmap.lol
+            </a>
+          </p>
+        </section>
 
         {/* Footer */}
-        <p className="py-8 text-center text-xs text-gray-500">
+        <p className="pb-8 text-center text-xs text-gray-500 dark:text-gray-500">
           Made by{' '}
           <a
             href="https://laurenyip.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-gray-400 underline underline-offset-4 transition-colors hover:text-gray-200"
+            className="text-gray-700 underline underline-offset-4 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
           >
             Lauren Yip
           </a>
         </p>
-      </main>
+      </div>
     </div>
   )
 }

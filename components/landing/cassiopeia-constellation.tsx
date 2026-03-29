@@ -57,7 +57,7 @@ function ConstellationSvg({
 }) {
   return (
     <svg
-      className={`text-gray-400 dark:text-gray-500 ${className ?? ''}`}
+      className={className}
       viewBox={config.viewBox}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
@@ -70,10 +70,9 @@ function ConstellationSvg({
           y1={y1}
           x2={x2}
           y2={y2}
-          stroke="rgba(167,139,250,0.3)"
           strokeWidth={1}
           strokeDasharray="4 4"
-          className="animate-dash-flow"
+          className="animate-dash-flow [stroke:rgba(109,40,217,0.4)] dark:[stroke:rgba(167,139,250,0.3)]"
         />
       ))}
       {config.nodes.map((n) => (
@@ -82,12 +81,12 @@ function ConstellationSvg({
             cx={n.x}
             cy={n.y}
             r={n.you ? 10 : 8}
-            fill={n.color}
-            className="animate-node-pulse"
+            fill={n.you ? undefined : n.color}
+            className={`animate-node-pulse ${n.you ? 'fill-violet-600 dark:fill-white' : ''}`}
             style={{
               animationDelay: n.delay,
               filter: n.you
-                ? 'drop-shadow(0 0 10px rgba(255,255,255,0.55))'
+                ? 'drop-shadow(0 0 10px rgba(124,58,237,0.45))'
                 : `drop-shadow(0 0 8px ${n.color})`,
             }}
             stroke={n.you ? 'rgba(124,58,237,0.55)' : 'none'}
@@ -97,8 +96,7 @@ function ConstellationSvg({
             x={n.x}
             y={n.y + (n.you ? 22 : 20)}
             textAnchor="middle"
-            fill="currentColor"
-            className="text-[10px]"
+            className="fill-gray-500 text-[10px] dark:fill-white/60"
             style={{ fontFamily: 'Inter, sans-serif' }}
           >
             {n.label}

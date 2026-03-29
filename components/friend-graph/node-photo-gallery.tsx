@@ -17,6 +17,7 @@ export function NodePhotoGallery({
   disabled,
   refreshKey,
   onPrimaryAvatarChange,
+  onPhotosCountChange,
 }: {
   supabase: SupabaseClient
   nodeId: string
@@ -24,6 +25,8 @@ export function NodePhotoGallery({
   /** Increment to reload photos (e.g. after header avatar upload). */
   refreshKey?: number
   onPrimaryAvatarChange: (url: string | null) => void
+  /** Fires when gallery photo count changes (for collapsed header labels). */
+  onPhotosCountChange?: (count: number) => void
 }) {
   const [photos, setPhotos] = useState<NodePhotoRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,6 +54,10 @@ export function NodePhotoGallery({
     const primary = rows.find((p) => p.is_primary)
     avatarCbRef.current(primary?.url ?? null)
   }, [supabase, nodeId])
+
+  useEffect(() => {
+    onPhotosCountChange?.(disabled ? 0 : photos.length)
+  }, [photos.length, onPhotosCountChange, disabled])
 
   useEffect(() => {
     if (disabled || !nodeId) {
@@ -130,7 +137,7 @@ export function NodePhotoGallery({
   }
 
   return (
-    <div className="mt-2 space-y-2">
+    <div className="space-y-1.5">
       {error ? (
         <p className="text-sm text-red-600 dark:text-red-400" role="alert">
           {error}
@@ -140,7 +147,7 @@ export function NodePhotoGallery({
         <p className="text-xs text-emerald-600 dark:text-emerald-400">{successFlash}</p>
       ) : null}
 
-      <div className="flex gap-2 overflow-x-auto py-1">
+      <div className="flex max-h-14 gap-1.5 overflow-x-auto overflow-y-hidden py-0.5">
         {loading ? (
           <span className="text-xs text-zinc-500">Loading photos…</span>
         ) : (
@@ -149,14 +156,14 @@ export function NodePhotoGallery({
               <button
                 key={photo.id}
                 type="button"
-                className="relative h-14 w-14 shrink-0 cursor-pointer overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700"
+                className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700"
                 onClick={() => setLightbox(photo)}
               >
                 <Image
                   src={photo.url}
                   alt=""
-                  width={56}
-                  height={56}
+                  width={48}
+                  height={48}
                   className="h-full w-full object-cover"
                   unoptimized
                 />
@@ -173,7 +180,7 @@ export function NodePhotoGallery({
             <button
               type="button"
               disabled={uploadBusy}
-              className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-md border border-dashed border-zinc-300 text-[11px] font-medium text-zinc-600 disabled:opacity-60 dark:border-zinc-600 dark:text-zinc-400"
+              className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-md border border-dashed border-zinc-300 text-[10px] font-medium leading-tight text-zinc-600 disabled:opacity-60 dark:border-zinc-600 dark:text-zinc-400"
               onClick={() => fileInputRef.current?.click()}
             >
               {uploadBusy ? (

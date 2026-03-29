@@ -1,6 +1,6 @@
 export function LandingFeatureCards() {
   return (
-    <section className="mx-auto w-full max-w-5xl px-4" aria-labelledby="features-heading">
+    <section className="mx-auto w-full max-w-5xl px-4 sm:px-0" aria-labelledby="features-heading">
       <h2 id="features-heading" className="sr-only">
         Features
       </h2>
@@ -8,7 +8,7 @@ export function LandingFeatureCards() {
       {/* Card 1 — Node profiles */}
       <article className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/60">
         <div className="border-b border-gray-100 p-4 dark:border-white/10">
-          <h3 className="text-base font-semibold text-foreground">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
             Remember everything
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
@@ -27,7 +27,9 @@ export function LandingFeatureCards() {
                 MK
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">Maya Kim</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  Maya Kim
+                </p>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
                     Close Friend
@@ -43,7 +45,7 @@ export function LandingFeatureCards() {
                 <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
                   🎂 Birthday
                 </dt>
-                <dd className="text-foreground/90">March 15 · in 47 days</dd>
+                <dd className="text-gray-800 dark:text-white/90">March 15 · in 47 days</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
@@ -55,7 +57,7 @@ export function LandingFeatureCards() {
                 <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
                   📝 Note
                 </dt>
-                <dd className="text-foreground/90">
+                <dd className="text-gray-800 dark:text-white/90">
                   Loves hiking and terrible puns
                 </dd>
               </div>
@@ -193,7 +195,9 @@ export function LandingFeatureCards() {
       {/* Card 3 — Edges */}
       <article className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/60">
         <div className="border-b border-gray-100 p-4 dark:border-white/10">
-          <h3 className="text-base font-semibold text-foreground">Connect anyone</h3>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+            Connect anyone
+          </h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
             Draw a line between any two people to represent any kind of
             relationship. Friends, rivals, family — you define it.

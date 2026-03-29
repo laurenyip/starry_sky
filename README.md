@@ -25,7 +25,7 @@ FriendGraph is a web app for building a visual **network of people** and **how t
    - `NEXT_PUBLIC_SUPABASE_URL` — from Supabase → *Project Settings* → *API* → *Project URL*
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — *anon* *public* key (same page)
    - `SUPABASE_SERVICE_ROLE_KEY` — *service_role* key (server-only; needed for **public profile** pages to load other users’ graphs; never use in client-side code)
-   - `NEXT_PUBLIC_SITE_URL` (optional) — e.g. `http://localhost:3000` for correct metadata in development
+   - `NEXT_PUBLIC_SITE_URL` (optional) — e.g. `http://localhost:3000` locally, or `https://starmap.lol` in production for correct `metadataBase` / Open Graph
 
 4. **Database**  
    In the Supabase **SQL Editor**, run the script in `supabase/schema.sql` to create tables, RLS policies, and grants. Adjust if your project already has conflicting objects.
@@ -53,9 +53,9 @@ FriendGraph is a web app for building a visual **network of people** and **how t
 
    - `SUPABASE_SERVICE_ROLE_KEY` (mark as sensitive; only used in server code)
 
-3. Optionally set `NEXT_PUBLIC_SITE_URL` to your production URL (e.g. `https://your-app.vercel.app`) for Open Graph and `metadataBase`.
+3. Set **`NEXT_PUBLIC_SITE_URL`** in Vercel (Production) to **`https://starmap.lol`** so Open Graph and `metadataBase` use the custom domain.
 
-4. Deploy. Vercel detects **Next.js** automatically; **no `vercel.json` is required** for this app unless you later add redirects, headers, or other platform-specific rules.
+4. Deploy. Vercel detects **Next.js** automatically. This repo includes **`vercel.json`** to redirect traffic from the old `*.vercel.app` preview hostname to **https://starmap.lol** when applicable.
 
 ## Security notes
 

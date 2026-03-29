@@ -26,6 +26,7 @@ export default function SignupPage() {
       return
     }
     setLoading(true)
+    // Dynamic origin — works on localhost and production without hardcoding a domain.
     const redirectTo = `${window.location.origin}/auth/callback`
 
     const trimmedUsername = username.trim()

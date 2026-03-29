@@ -25,6 +25,7 @@ export default function LoginPage() {
       return
     }
     setLoading(true)
+    // Dynamic origin — works on localhost and production without hardcoding a domain.
     const redirectTo = `${window.location.origin}/auth/callback`
 
     const { error: signInError } = await supabase.auth.signInWithPassword({

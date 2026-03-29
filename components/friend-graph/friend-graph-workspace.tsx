@@ -4,6 +4,7 @@ import { useToast } from '@/components/toast-provider'
 import { SmartAttributeField } from '@/components/friend-graph/smart-attribute-field'
 import { CommunityConnectOverlay } from '@/components/friend-graph/community-connect-overlay'
 import { CommunitiesLegend } from '@/components/friend-graph/communities-legend'
+import { ShiftHintSticker } from '@/components/friend-graph/shift-hint-sticker'
 import { ConstellationOverlay } from '@/components/friend-graph/constellation-overlay'
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
 import { NodeDetailPanel } from '@/components/friend-graph/node-detail-panel'
@@ -213,7 +214,7 @@ function legacyRelationTypeToTags(rt: string | null | undefined): string[] {
 
 function relationTagPillClass(tag: string): string {
   const t = tag.trim()
-  const base = 'rounded-full px-2 py-0.5 text-[11px] font-medium border'
+  const base = 'rounded-full px-2 py-0.5 text-xs font-medium border'
   if (t === 'Friend' || t === 'Close Friend')
     return `${base} border-yellow-200 bg-yellow-100 text-yellow-900 dark:border-yellow-900/50 dark:bg-yellow-900/20 dark:text-yellow-200`
   if (t === 'Ex-Friend' || t === 'Ex-Partner')
@@ -237,7 +238,7 @@ function relationTagPillClass(tag: string): string {
 
 function relationTagPickerClass(selected: boolean): string {
   return [
-    'rounded-full px-2 py-1 text-xs transition-colors',
+    'rounded-full px-2 py-0.5 text-xs transition-colors',
     selected
       ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
       : 'border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900',
@@ -400,9 +401,9 @@ function FriendGraphInner({
   const [photoGalleryRefresh, setPhotoGalleryRefresh] = useState(0)
   const [panelSaving, setPanelSaving] = useState(false)
   const [panelErr, setPanelErr] = useState<string | null>(null)
-  const [panelSaveState, setPanelSaveState] = useState<'idle' | 'saved' | 'error'>(
-    'idle'
-  )
+  const [saveStatus, setSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle')
   const [panelName, setPanelName] = useState('')
   const [creatingDraftNode, setCreatingDraftNode] = useState(false)
   const [panelRelationTags, setPanelRelationTags] = useState<string[]>([])
@@ -423,11 +424,18 @@ function FriendGraphInner({
   const [rememberExpandedIds, setRememberExpandedIds] = useState<
     Record<string, boolean>
   >({})
+  const [relationshipHistoryOpen, setRelationshipHistoryOpen] =
+    useState(false)
+  const [photosSectionOpen, setPhotosSectionOpen] = useState(false)
+  const [galleryPhotoCount, setGalleryPhotoCount] = useState(0)
+  const [customAttrsShowAll, setCustomAttrsShowAll] = useState(false)
+  const [connectionsShowAll, setConnectionsShowAll] = useState(false)
+  const [panelNotesFocused, setPanelNotesFocused] = useState(false)
 
   const [showLeftPanel, setShowLeftPanel] = useState(true)
 
   const pinSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const panelSaveFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRowsRef = useRef(panelRows)
   panelRowsRef.current = panelRows
   const shiftRef = useRef(shiftHeld)
@@ -540,6 +548,14 @@ function FriendGraphInner({
   const availableCommunitiesForSelectedNode = useMemo(
     () => communities.filter((c) => !selectedNodeCommunityIds.includes(c.id)),
     [communities, selectedNodeCommunityIds]
+  )
+
+  const panelDedupedConnections = useMemo(
+    () =>
+      selectedPerson
+        ? edgesForPersonDeduped(dbEdges, selectedPerson.id)
+        : [],
+    [selectedPerson, dbEdges]
   )
 
   const needsForceLayout = useMemo(
@@ -1077,6 +1093,36 @@ function FriendGraphInner({
     return () => clearTimeout(t)
   }, [highlightId])
 
+  const showSaveStatus = useCallback(
+    (s: 'idle' | 'saving' | 'saved' | 'error') => {
+      if (saveStatusTimerRef.current) {
+        clearTimeout(saveStatusTimerRef.current)
+        saveStatusTimerRef.current = null
+      }
+      setSaveStatus(s)
+      if (s === 'saved') {
+        setPanelErr(null)
+        saveStatusTimerRef.current = setTimeout(() => {
+          setSaveStatus('idle')
+          saveStatusTimerRef.current = null
+        }, 1500)
+      }
+    },
+    []
+  )
+
+  const markSaveSuccess = useCallback(() => {
+    showSaveStatus('saved')
+  }, [showSaveStatus])
+
+  const markSaveFail = useCallback(
+    (msg?: string) => {
+      setPanelErr(msg || 'Failed to save')
+      showSaveStatus('error')
+    },
+    [showSaveStatus]
+  )
+
   const refreshNodeCommunities = useCallback(async () => {
     const { data, error: ncErr } = await supabase
       .from('node_communities')
@@ -1095,6 +1141,7 @@ function FriendGraphInner({
     async (nodeId: string, communityId: string) => {
       const cid = normalizeCommunityId(communityId)
       if (!cid) return
+      showSaveStatus('saving')
       const member = nodeCommunityMap.get(nodeId)?.includes(cid) ?? false
       if (member) {
         const { error: delErr } = await supabase
@@ -1105,6 +1152,7 @@ function FriendGraphInner({
           .eq('community_id', cid)
         if (delErr) {
           setError(delErr.message)
+          showSaveStatus('error')
           return
         }
       } else {
@@ -1116,12 +1164,14 @@ function FriendGraphInner({
         })
         if (insErr) {
           setError(insErr.message)
+          showSaveStatus('error')
           return
         }
       }
       await refreshNodeCommunities()
+      showSaveStatus('saved')
     },
-    [nodeCommunityMap, supabase, userId, refreshNodeCommunities]
+    [nodeCommunityMap, supabase, userId, refreshNodeCommunities, showSaveStatus]
   )
 
   useEffect(() => {
@@ -1153,8 +1203,22 @@ function FriendGraphInner({
   }, [selectedPerson, locations])
 
   useEffect(() => {
+    setSaveStatus('idle')
+  }, [selectedPerson?.id])
+
+  useEffect(() => {
     if (!selectedPerson) setAvatarPickerActive(false)
   }, [selectedPerson])
+
+  useEffect(() => {
+    setRememberHistoryOpen(false)
+    setRelationshipHistoryOpen(false)
+    setPhotosSectionOpen(false)
+    setCustomAttrsShowAll(false)
+    setConnectionsShowAll(false)
+    setPanelNotesFocused(false)
+    setGalleryPhotoCount(0)
+  }, [selectedPerson?.id])
 
   useEffect(() => {
     if (!selectedEdge) {
@@ -1245,21 +1309,6 @@ function FriendGraphInner({
     void loadRememberHistory(selectedPerson.id)
   }, [selectedPerson, loadRememberHistory])
 
-  const markSaveSuccess = useCallback(() => {
-    setPanelErr(null)
-    setPanelSaveState('saved')
-    if (panelSaveFlashTimer.current) clearTimeout(panelSaveFlashTimer.current)
-    panelSaveFlashTimer.current = setTimeout(() => {
-      setPanelSaveState('idle')
-    }, 1500)
-  }, [])
-
-  const markSaveFail = useCallback((msg?: string) => {
-    setPanelErr(msg || 'Failed to save')
-    setPanelSaveState('error')
-    if (panelSaveFlashTimer.current) clearTimeout(panelSaveFlashTimer.current)
-  }, [])
-
   const refreshSelectedAfterAutosave = useCallback(
     async (personId: string) => {
       const nextPeople = await loadData()
@@ -1270,27 +1319,38 @@ function FriendGraphInner({
     [loadData]
   )
 
-  const saveNodePatch = useCallback(
-    async (personId: string, patch: Record<string, unknown>) => {
-      const { error: uerr } = await supabase
+  const saveNodeField = useCallback(
+    async (field: string, value: unknown) => {
+      if (!selectedPerson?.id || selectedPerson.id.startsWith('__draft__')) return
+      showSaveStatus('saving')
+      const { error } = await supabase
         .from('nodes')
-        .update(patch)
-        .eq('id', personId)
+        .update({ [field]: value })
+        .eq('id', selectedPerson.id)
         .eq('owner_id', userId)
-      if (uerr) {
-        markSaveFail(uerr.message || 'Failed to save')
+      if (error) {
+        setPanelErr(error.message)
+        showSaveStatus('error')
         return
       }
-      await refreshSelectedAfterAutosave(personId)
-      markSaveSuccess()
+      await refreshSelectedAfterAutosave(selectedPerson.id)
+      showSaveStatus('saved')
     },
-    [supabase, userId, refreshSelectedAfterAutosave, markSaveSuccess, markSaveFail]
+    [selectedPerson, supabase, userId, refreshSelectedAfterAutosave, showSaveStatus]
   )
+
+  const handlePanelNameBlur = useCallback(async () => {
+    if (!selectedPerson || selectedPerson.id.startsWith('__draft__')) return
+    const next = panelName.trim() || 'Unnamed'
+    if (next === selectedPerson.name) return
+    await saveNodeField('name', next)
+  }, [selectedPerson, panelName, saveNodeField])
 
   const saveThingsToRememberWithHistory = useCallback(async () => {
     if (!selectedPerson) return
     const nextContent = panelNotes
     if (nextContent === selectedPerson.things_to_remember) return
+    showSaveStatus('saving')
     const personId = selectedPerson.id
     const { error: uerr } = await supabase
       .from('nodes')
@@ -1323,6 +1383,7 @@ function FriendGraphInner({
     loadRememberHistory,
     markSaveSuccess,
     markSaveFail,
+    showSaveStatus,
   ])
 
   useEffect(() => {
@@ -1338,6 +1399,7 @@ function FriendGraphInner({
 
   const persistCustomAttributesBlur = useCallback(async () => {
     if (!selectedPerson || selectedPerson.id.startsWith('__draft__')) return
+    showSaveStatus('saving')
     const rows = panelRowsRef.current
     const attrs = rowsToCustomAttributes(rows)
     const { error } = await supabase
@@ -1348,6 +1410,7 @@ function FriendGraphInner({
     if (error) {
       console.error('[custom_attributes] blur save', error)
       setPanelErr(error.message)
+      showSaveStatus('error')
       return
     }
     setPanelErr(null)
@@ -1359,7 +1422,8 @@ function FriendGraphInner({
     setSelectedPerson((p) =>
       p && p.id === selectedPerson.id ? { ...p, custom_attributes: attrs } : p
     )
-  }, [selectedPerson, supabase, userId])
+    showSaveStatus('saved')
+  }, [selectedPerson, supabase, userId, showSaveStatus])
 
   const saveRelationTagsToUser = useCallback(
     async (nextTagsRaw: string[]) => {
@@ -1386,6 +1450,8 @@ function FriendGraphInner({
       const prevKey = prevTags.join(', ')
       const nextKey = nextTags.join(', ')
       if (prevKey === nextKey) return
+
+      showSaveStatus('saving')
 
       // Keep legacy single field populated for compatibility (first tag only).
       const legacyTag = nextTags[0] ?? null
@@ -1464,6 +1530,7 @@ function FriendGraphInner({
       refreshSelectedAfterAutosave,
       markSaveSuccess,
       markSaveFail,
+      showSaveStatus,
     ]
   )
 
@@ -1700,6 +1767,23 @@ function FriendGraphInner({
     [supabase, userId, loadData]
   )
 
+  const handlePanelLocationBlur = useCallback(async () => {
+    if (!selectedPerson || selectedPerson.id.startsWith('__draft__')) return
+    const nextLocName = panelLocName.trim()
+    let locId: string | null = selectedPerson.location_id
+    if (nextLocName) {
+      const existing = locations.find(
+        (l) => l.name.trim().toLowerCase() === nextLocName.toLowerCase()
+      )
+      locId = existing?.id ?? null
+      if (!locId) locId = await addLocation(nextLocName)
+    } else {
+      locId = null
+    }
+    if (locId === selectedPerson.location_id) return
+    await saveNodeField('location_id', locId)
+  }, [selectedPerson, panelLocName, locations, addLocation, saveNodeField])
+
   const bulkAddNodesToCommunity = useCallback(
     async (communityId: string) => {
       const cid = normalizeCommunityId(communityId)
@@ -1915,6 +1999,7 @@ function FriendGraphInner({
   const savePanelExplicit = useCallback(async () => {
     if (!selectedPerson) return
     setPanelSaving(true)
+    showSaveStatus('saving')
     setPanelErr(null)
     try {
       const nextName = panelName.trim() || 'Unnamed'
@@ -2014,6 +2099,7 @@ function FriendGraphInner({
     markSaveSuccess,
     markSaveFail,
     showToast,
+    showSaveStatus,
   ])
 
   const confirmPendingEdge = useCallback(async () => {
@@ -2434,6 +2520,9 @@ function FriendGraphInner({
           maskColor="rgba(0,0,0,0.12)"
         />
           </ReactFlow>
+          <ShiftHintSticker
+            visible={selectedNodeIds.size === 0}
+          />
         {bulkToolbarMounted && view === 'graph' ? (
           <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
             <div
@@ -2654,7 +2743,13 @@ function FriendGraphInner({
       )}
       </div>
 
-      <div className="pointer-events-auto fixed bottom-4 right-4 z-20 flex flex-col gap-2 sm:flex-row">
+      <div
+        className="pointer-events-auto fixed bottom-4 z-40 flex flex-col gap-2 sm:flex-row"
+        style={{
+          right: selectedPerson ? 'calc(288px + 1rem)' : '1rem',
+          transition: 'right 250ms ease-in-out',
+        }}
+      >
         <button
           type="button"
           onClick={() => {
@@ -2978,20 +3073,8 @@ function FriendGraphInner({
         personDisplayInitial={personDisplayInitial}
         panelRelationTags={panelRelationTags}
         relationTagPillClass={relationTagPillClass}
-        photoGallery={
-          selectedPerson ? (
-            <NodePhotoGallery
-              supabase={supabase}
-              nodeId={selectedPerson.id}
-              disabled={
-                creatingDraftNode || selectedPerson.id.startsWith('__draft__')
-              }
-              refreshKey={photoGalleryRefresh}
-              onPrimaryAvatarChange={onGalleryPrimaryAvatarChange}
-            />
-          ) : null
-        }
-        panelSaveState={panelSaveState}
+        saveStatus={saveStatus}
+        onPanelNameBlur={() => void handlePanelNameBlur()}
         panelErr={panelErr}
         panelSaving={panelSaving}
         onSave={() => void savePanelExplicit()}
@@ -3002,74 +3085,87 @@ function FriendGraphInner({
         {selectedPerson ? (
           <>
             <div>
-              <label className="text-xs uppercase tracking-wide text-gray-400">Location</label>
+              <label className="mb-1 block text-xs uppercase tracking-widest text-gray-400">
+                Location
+              </label>
               <input
                 value={panelLocName}
                 onChange={(e) => setPanelLocName(e.target.value)}
+                onBlur={() => void handlePanelLocationBlur()}
                 placeholder="e.g. Vancouver"
-                className="mt-1 w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
+                className="w-full border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
               />
             </div>
             {!selectedPerson.is_self ? (
               <div>
-                <label className="text-xs uppercase tracking-wide text-gray-400">
+                <label className="mb-1 block text-xs uppercase tracking-widest text-gray-400">
                   Relationship to You
                 </label>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(RELATION_TYPES as unknown as string[]).map((tag) => {
-                    const selected = panelRelationTags.includes(tag)
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        className={relationTagPickerClass(selected)}
-                        onClick={() => {
-                          const next = selected
-                            ? panelRelationTags.filter((t) => t !== tag)
-                            : [...panelRelationTags, tag]
-                          const normalized = normalizeRelationTags(next)
-                          setPanelRelationTags(normalized)
-                        }}
-                      >
-                        {tag}
-                      </button>
-                    )
-                  })}
+                <div className="max-h-24 overflow-y-auto rounded-md">
+                  <div className="flex flex-wrap gap-1.5 pr-0.5">
+                    {(RELATION_TYPES as unknown as string[]).map((tag) => {
+                      const selected = panelRelationTags.includes(tag)
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          className={relationTagPickerClass(selected)}
+                          onClick={() => {
+                            const next = selected
+                              ? panelRelationTags.filter((t) => t !== tag)
+                              : [...panelRelationTags, tag]
+                            const normalized = normalizeRelationTags(next)
+                            setPanelRelationTags(normalized)
+                            void saveRelationTagsToUser(normalized)
+                          }}
+                        >
+                          {tag}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
                 {panelRelationTags.join(', ') !== loadedRelationTagsKey ? (
                   <div className="mt-2">
-                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                       Note (optional)
                     </label>
                     <input
                       value={panelRelationNote}
                       onChange={(e) => setPanelRelationNote(e.target.value)}
                       placeholder="e.g. met at conference"
-                      className="mt-1 w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
+                      className="w-full border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
                     />
                   </div>
                 ) : null}
               </div>
             ) : null}
             <div>
-              <label className="text-xs uppercase tracking-wide text-gray-400">Things to remember</label>
+              <label className="mb-1 block text-xs uppercase tracking-widest text-gray-400">
+                Things to remember
+              </label>
               <textarea
                 value={panelNotes}
                 onChange={(e) => setPanelNotes(e.target.value)}
-                rows={5}
-                className="mt-1 w-full resize-y border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
+                rows={panelNotesFocused ? 4 : 2}
+                onFocus={() => setPanelNotesFocused(true)}
+                onBlur={() => {
+                  setPanelNotesFocused(false)
+                  void saveThingsToRememberWithHistory()
+                }}
+                className="w-full resize-y border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
               />
             </div>
             <div>
               <button
                 type="button"
-                className="flex w-full items-center justify-between text-left"
+                className="flex w-full items-center justify-between gap-2 text-left"
                 onClick={() => setRememberHistoryOpen((v) => !v)}
               >
-                <span className="text-xs uppercase tracking-wide text-gray-400">
-                  Edit History
+                <span className="text-xs uppercase tracking-widest text-gray-400">
+                  Things to Remember — Edit History
                 </span>
-                <span className="text-xs text-gray-400">
+                <span className="shrink-0 text-xs text-gray-400">
                   {rememberHistoryOpen ? '▾' : '▸'}
                 </span>
               </button>
@@ -3082,7 +3178,10 @@ function FriendGraphInner({
                       const expanded = rememberExpandedIds[entry.id] === true
                       const isLong = entry.content.length > 220
                       return (
-                        <div key={entry.id} className="rounded border border-zinc-200 p-2 dark:border-zinc-700">
+                        <div
+                          key={entry.id}
+                          className="rounded border border-zinc-200 p-2 dark:border-zinc-700"
+                        >
                           <p
                             className="text-sm text-foreground whitespace-pre-wrap break-words"
                             style={
@@ -3123,8 +3222,10 @@ function FriendGraphInner({
               ) : null}
             </div>
             <div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs uppercase tracking-wide text-gray-400">Custom attributes</span>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="text-xs uppercase tracking-widest text-gray-400">
+                  Custom attributes
+                </span>
                 <button
                   type="button"
                   className="text-xs underline"
@@ -3135,16 +3236,19 @@ function FriendGraphInner({
                   + Add field
                 </button>
               </div>
-              <div className="mt-2 space-y-2">
-                {panelRows.map((row, i) => (
-                  <div key={i} className="flex gap-2">
+              <div className="space-y-1">
+                {(customAttrsShowAll
+                  ? panelRows
+                  : panelRows.slice(0, 3)
+                ).map((row, rowIndex) => (
+                  <div key={rowIndex} className="flex gap-1.5">
                     <input
-                      className="w-[36%] border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
+                      className="w-[36%] border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
                       value={row.key}
                       onChange={(e) =>
                         setPanelRows((rows) =>
                           rows.map((x, j) =>
-                            j === i ? { ...x, key: e.target.value } : x
+                            j === rowIndex ? { ...x, key: e.target.value } : x
                           )
                         )
                       }
@@ -3157,7 +3261,7 @@ function FriendGraphInner({
                         onChange={(next) =>
                           setPanelRows((rows) =>
                             rows.map((x, j) =>
-                              j === i ? { ...x, value: next } : x
+                              j === rowIndex ? { ...x, value: next } : x
                             )
                           )
                         }
@@ -3167,12 +3271,12 @@ function FriendGraphInner({
                     </div>
                     <button
                       type="button"
-                      className="text-zinc-500"
+                      className="shrink-0 text-zinc-500"
                       onClick={() =>
                         setPanelRows((rows) =>
-                          rows.filter((_, j) => j !== i).length === 0
+                          rows.filter((_, j) => j !== rowIndex).length === 0
                             ? [{ key: '', value: '' }]
-                            : rows.filter((_, j) => j !== i)
+                            : rows.filter((_, j) => j !== rowIndex)
                         )
                       }
                     >
@@ -3181,34 +3285,61 @@ function FriendGraphInner({
                   </div>
                 ))}
               </div>
+              {panelRows.length > 3 && !customAttrsShowAll ? (
+                <button
+                  type="button"
+                  className="mt-1.5 text-xs text-blue-600 underline hover:underline dark:text-blue-400"
+                  onClick={() => setCustomAttrsShowAll(true)}
+                >
+                  Show {panelRows.length - 3} more
+                </button>
+              ) : null}
+              {panelRows.length > 3 && customAttrsShowAll ? (
+                <button
+                  type="button"
+                  className="mt-1.5 text-xs text-blue-600 underline dark:text-blue-400"
+                  onClick={() => setCustomAttrsShowAll(false)}
+                >
+                  Show less
+                </button>
+              ) : null}
             </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-gray-400">Communities</p>
+              <p className="mb-1 text-xs uppercase tracking-widest text-gray-400">
+                Communities
+              </p>
               {selectedNodeCommunities.length === 0 ? (
-                <p className="mt-1 text-xs text-zinc-400">No communities yet</p>
+                <p className="text-xs text-zinc-400">No communities yet</p>
               ) : (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {selectedNodeCommunities.map((c) => (
-                    <span
-                      key={c.id}
-                      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-                      style={{
-                        color: c.color,
-                        borderColor: c.color,
-                        backgroundColor: hexToRgba(c.color, 0.15),
-                      }}
-                    >
-                      <span>{c.name}</span>
-                      <button
-                        type="button"
-                        className="text-[11px] leading-none"
-                        onClick={() => void toggleNodeCommunityMembership(selectedPerson.id, c.id)}
-                        aria-label={`Remove from ${c.name}`}
+                <div className="max-h-16 overflow-y-auto">
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedNodeCommunities.map((c) => (
+                      <span
+                        key={c.id}
+                        className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+                        style={{
+                          color: c.color,
+                          borderColor: c.color,
+                          backgroundColor: hexToRgba(c.color, 0.15),
+                        }}
                       >
-                        ×
-                      </button>
-                    </span>
-                  ))}
+                        <span>{c.name}</span>
+                        <button
+                          type="button"
+                          className="text-xs leading-none"
+                          onClick={() =>
+                            void toggleNodeCommunityMembership(
+                              selectedPerson.id,
+                              c.id
+                            )
+                          }
+                          aria-label={`Remove from ${c.name}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               <select
@@ -3219,7 +3350,7 @@ function FriendGraphInner({
                   if (!cid) return
                   void toggleNodeCommunityMembership(selectedPerson.id, cid)
                 }}
-                className="mt-2 w-full border-b border-gray-300 bg-transparent px-1 py-0.5 text-sm outline-none focus:border-blue-400"
+                className="mt-2 w-full border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
               >
                 <option value="">+ Add to community</option>
                 {availableCommunitiesForSelectedNode.map((c) => (
@@ -3229,52 +3360,104 @@ function FriendGraphInner({
                 ))}
               </select>
             </div>
+            <div>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 text-left"
+                onClick={() => setPhotosSectionOpen((v) => !v)}
+              >
+                <span className="text-xs uppercase tracking-widest text-gray-400">
+                  Photos
+                  {galleryPhotoCount > 0
+                    ? ` · ${galleryPhotoCount} photo${galleryPhotoCount === 1 ? '' : 's'}`
+                    : ''}
+                </span>
+                <span className="shrink-0 text-xs text-gray-400">
+                  {photosSectionOpen ? '▾' : '▸'}
+                </span>
+              </button>
+              {photosSectionOpen ? (
+                <div className="mt-2">
+                  <NodePhotoGallery
+                    supabase={supabase}
+                    nodeId={selectedPerson.id}
+                    disabled={
+                      creatingDraftNode ||
+                      selectedPerson.id.startsWith('__draft__')
+                    }
+                    refreshKey={photoGalleryRefresh}
+                    onPrimaryAvatarChange={onGalleryPrimaryAvatarChange}
+                    onPhotosCountChange={setGalleryPhotoCount}
+                  />
+                </div>
+              ) : null}
+            </div>
             {!selectedPerson.is_self ? (
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-400">Relationship history</p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Changes to “relation to you”, newest first.
-                </p>
-                {relationHistory.length === 0 ? (
-                  <p className="mt-2 text-xs text-zinc-400">
-                    No changes recorded yet.
-                  </p>
-                ) : (
-                  <ul className="mt-3 space-y-3 border-l-2 border-zinc-200 pl-3 dark:border-zinc-700">
-                    {relationHistory.map((row) => (
-                      <li key={row.id} className="text-sm">
-                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                          <span className="font-medium capitalize">
-                            → {row.new_relation}
-                          </span>
-                          <span className="text-xs text-zinc-500">
-                            {formatRelativeTime(row.changed_at)}
-                          </span>
-                        </div>
-                        {row.previous_relation ? (
-                          <p className="mt-0.5 text-xs text-zinc-500">
-                            was:{' '}
-                            <span className="capitalize">
-                              {row.previous_relation}
-                            </span>
-                          </p>
-                        ) : null}
-                        {row.note ? (
-                          <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
-                            {row.note}
-                          </p>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 text-left"
+                  onClick={() => setRelationshipHistoryOpen((v) => !v)}
+                >
+                  <span className="text-xs uppercase tracking-widest text-gray-400">
+                    Relationship history
+                  </span>
+                  <span className="shrink-0 text-xs text-gray-400">
+                    {relationshipHistoryOpen ? '▾' : '▸'}
+                  </span>
+                </button>
+                {relationshipHistoryOpen ? (
+                  <>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Changes to “relation to you”, newest first.
+                    </p>
+                    {relationHistory.length === 0 ? (
+                      <p className="mt-2 text-xs text-zinc-400">
+                        No changes recorded yet.
+                      </p>
+                    ) : (
+                      <ul className="mt-2 space-y-2 border-l-2 border-zinc-200 pl-2 text-xs dark:border-zinc-700">
+                        {relationHistory.map((row) => (
+                          <li key={row.id}>
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <span className="font-medium capitalize">
+                                → {row.new_relation}
+                              </span>
+                              <span className="text-xs text-zinc-500">
+                                {formatRelativeTime(row.changed_at)}
+                              </span>
+                            </div>
+                            {row.previous_relation ? (
+                              <p className="mt-0.5 text-xs text-zinc-500">
+                                was:{' '}
+                                <span className="capitalize">
+                                  {row.previous_relation}
+                                </span>
+                              </p>
+                            ) : null}
+                            {row.note ? (
+                              <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+                                {row.note}
+                              </p>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : null}
               </div>
             ) : null}
             <div>
-              <p className="text-xs uppercase tracking-wide text-gray-400">Connections</p>
+              <p className="mb-1 text-xs uppercase tracking-widest text-gray-400">
+                Connections
+              </p>
               <p className="text-xs text-zinc-500">Existing links for this person.</p>
-              <ul className="mt-3 space-y-2 text-sm">
-                {edgesForPersonDeduped(dbEdges, selectedPerson.id).map((e) => {
+              <ul className="mt-2 space-y-1 text-xs">
+                {(connectionsShowAll
+                  ? panelDedupedConnections
+                  : panelDedupedConnections.slice(0, 4)
+                ).map((e) => {
                   const oid =
                     e.source_node_id === selectedPerson.id
                       ? e.target_node_id
@@ -3283,7 +3466,7 @@ function FriendGraphInner({
                   return (
                     <li
                       key={pairKey(e.source_node_id, e.target_node_id)}
-                      className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-2 py-1.5 dark:border-zinc-700"
+                      className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-2 py-1 dark:border-zinc-700"
                     >
                       <span className="font-medium">{other?.name ?? oid}</span>
                       <button
@@ -3297,6 +3480,24 @@ function FriendGraphInner({
                   )
                 })}
               </ul>
+              {panelDedupedConnections.length > 4 && !connectionsShowAll ? (
+                <button
+                  type="button"
+                  className="mt-1.5 text-xs text-blue-600 underline dark:text-blue-400"
+                  onClick={() => setConnectionsShowAll(true)}
+                >
+                  Show all ({panelDedupedConnections.length})
+                </button>
+              ) : null}
+              {panelDedupedConnections.length > 4 && connectionsShowAll ? (
+                <button
+                  type="button"
+                  className="mt-1.5 text-xs text-blue-600 underline dark:text-blue-400"
+                  onClick={() => setConnectionsShowAll(false)}
+                >
+                  Show less
+                </button>
+              ) : null}
             </div>
           </>
         ) : null}

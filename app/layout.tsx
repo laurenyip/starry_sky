@@ -7,7 +7,10 @@ import './globals.css'
 
 const inter = Inter({ subsets: ["latin"] })
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
+/** Prefer NEXT_PUBLIC_SITE_URL; in Vercel Production default to the custom domain for metadataBase. */
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+  (process.env.VERCEL_ENV === 'production' ? 'https://starmap.lol' : undefined)
 
 export const metadata: Metadata = {
   ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
@@ -36,7 +39,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html
+      lang="en"
+      className="h-full antialiased"
+      suppressHydrationWarning
+    >
       <head>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <script
