@@ -1,7 +1,9 @@
 'use client'
 
+import { useToast } from '@/components/toast-provider'
 import { NO_COMMUNITY_KEY } from '@/lib/edge-highlight'
 import { DEFAULT_EDGE_NEUTRAL } from '@/lib/flow-build'
+import { useCallback, useEffect, useId, useState } from 'react'
 
 export type CommunityRow = { id: string; name: string; color: string }
 export type LocationLegendRow = { id: string; name: string; count: number }
@@ -27,6 +29,39 @@ export function CommunitiesLegend({
   onHoverCommunity?: (key: string | null) => void
   onNewCommunity: () => void
 }) {
+  const { showToast } = useToast()
+  const [locationModalOpen, setLocationModalOpen] = useState(false)
+  const [locationDraft, setLocationDraft] = useState('')
+  const locationTitleId = useId()
+
+  const closeLocationModal = useCallback(() => {
+    setLocationModalOpen(false)
+    setLocationDraft('')
+  }, [])
+
+  useEffect(() => {
+    if (!locationModalOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeLocationModal()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [locationModalOpen, closeLocationModal])
+
+  const submitNewLocationHint = useCallback(() => {
+    const v = locationDraft.trim()
+    if (!v) {
+      showToast('Enter a location name.', 'error')
+      return
+    }
+    closeLocationModal()
+    showToast(
+      `Go to any person's profile and set their location to '${v}' to add them here.`,
+      'info',
+      4000
+    )
+  }, [locationDraft, showToast, closeLocationModal])
+
   return (
     <div className="pointer-events-auto z-20 flex w-full min-w-0 flex-col rounded-xl border border-zinc-200/90 bg-background/95 p-3 shadow-lg backdrop-blur-md dark:border-zinc-700/90">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
@@ -97,6 +132,13 @@ export function CommunitiesLegend({
       >
         + New community
       </button>
+      <button
+        type="button"
+        onClick={() => setLocationModalOpen(true)}
+        className="mt-2 w-full rounded-lg border border-dashed border-zinc-300 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800/80"
+      >
+        + New Location
+      </button>
 
       <div className="my-3 h-px bg-zinc-200/80 dark:bg-zinc-700/80" />
 
@@ -124,6 +166,55 @@ export function CommunitiesLegend({
           </li>
         ))}
       </ul>
+
+      {locationModalOpen ? (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            aria-label="Close"
+            onClick={closeLocationModal}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={locationTitleId}
+            className="relative z-10 w-full max-w-sm rounded-xl border border-zinc-200 bg-background p-4 shadow-xl dark:border-zinc-600"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p id={locationTitleId} className="text-sm font-medium text-foreground">
+              New location
+            </p>
+            <input
+              type="text"
+              value={locationDraft}
+              onChange={(e) => setLocationDraft(e.target.value)}
+              placeholder="e.g. Vancouver"
+              className="mt-3 w-full rounded-lg border border-zinc-300 bg-background px-3 py-2 text-sm text-foreground outline-none ring-offset-background placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-400/50 dark:border-zinc-600 dark:focus:ring-zinc-500/40"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitNewLocationHint()
+              }}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeLocationModal}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitNewLocationHint}
+                className="rounded-lg bg-foreground px-3 py-1.5 text-xs font-medium text-background transition-opacity hover:opacity-90"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

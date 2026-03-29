@@ -2228,7 +2228,7 @@ function FriendGraphInner({
             showLeftPanel ? 'w-56 opacity-100' : 'pointer-events-none w-0 opacity-0'
           }`}
         >
-          <div className="communities-panel box-border h-full w-56 min-h-0 overflow-y-auto p-2 pr-1">
+          <div className="box-border h-full w-56 min-h-0 overflow-y-auto p-2 pr-1">
             <CommunitiesLegend
               communities={communities.map((c) => ({
                 id: c.id,

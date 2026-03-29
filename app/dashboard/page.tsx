@@ -3,6 +3,7 @@
 import { FriendGraphWorkspace } from '@/components/friend-graph/friend-graph-workspace'
 import { LoadingSpinner } from '@/components/loading-spinner'
 import { useSupabaseContext } from '@/components/supabase-provider'
+import { isInvalidRefreshTokenError } from '@/lib/auth/session-errors'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
@@ -23,6 +24,12 @@ export default function DashboardPage() {
       error,
     } = await supabase.auth.getSession()
     if (error) {
+      if (isInvalidRefreshTokenError(error)) {
+        await supabase.auth.signOut({ scope: 'local' })
+        setAuthChecked(true)
+        router.replace('/login')
+        return
+      }
       setAuthError(error.message)
       setAuthChecked(true)
       return

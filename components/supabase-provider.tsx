@@ -1,5 +1,6 @@
 'use client'
 
+import { isInvalidRefreshTokenError } from '@/lib/auth/session-errors'
 import { createClient } from '@/lib/supabase'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import {
@@ -37,9 +38,18 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       setSession(nextSession)
     })
 
-    void client.auth.getSession().then(({ data: { session: current } }) => {
-      setSession(current)
-    })
+    void client.auth
+      .getSession()
+      .then(async ({ data: { session: current }, error }) => {
+        if (error) {
+          if (isInvalidRefreshTokenError(error)) {
+            await client.auth.signOut({ scope: 'local' })
+          }
+          setSession(null)
+          return
+        }
+        setSession(current)
+      })
 
     return () => subscription.unsubscribe()
   }, [])

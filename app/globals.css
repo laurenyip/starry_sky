@@ -32,6 +32,44 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* Custom scrollbar — webkit browsers */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.6);
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+}
+
+.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
 @keyframes node-in {
   from {
     opacity: 0;
@@ -69,39 +107,80 @@ body {
   animation: scroll-right 40s linear infinite;
 }
 
-/* Left communities/locations panel — scrollbar only when needed, minimal thumb */
-.communities-panel {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+@keyframes landing-constellation-line-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
-.communities-panel::-webkit-scrollbar {
-  width: 4px;
+.landing-constellation-line {
+  animation: landing-constellation-line-pulse 2s ease-in-out infinite;
 }
 
-.communities-panel::-webkit-scrollbar-track {
-  background: transparent;
+@keyframes landing-edge-draw {
+  0% {
+    stroke-dashoffset: 184;
+  }
+  60% {
+    stroke-dashoffset: 0;
+  }
+  61%,
+  100% {
+    stroke-dashoffset: 0;
+  }
 }
 
-.communities-panel::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 999px;
+.landing-edge-line {
+  animation: landing-edge-draw 2.5s linear infinite;
 }
 
-.communities-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.28);
+@keyframes landing-ghost-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }
 
-.dark .communities-panel {
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+.landing-ghost-pulse {
+  animation: landing-ghost-pulse 2.5s ease-in-out infinite;
 }
 
-.dark .communities-panel::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+@keyframes dash-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -24;
+  }
 }
 
-.dark .communities-panel::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+@keyframes node-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.85;
+  }
+}
+
+.animate-dash-flow {
+  animation: dash-flow 2s linear infinite;
+}
+
+.animate-node-pulse {
+  animation: node-pulse 2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 @layer base {
