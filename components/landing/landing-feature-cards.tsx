@@ -12,8 +12,8 @@ export function LandingFeatureCards() {
             Remember everything
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-            Every person gets a profile. Birthdays, allergies, favourite things,
-            how you met, upcoming plans — all in one place.
+            Every person gets a profile. Store birthdays, allergies, favourite things,
+            how you met, upcoming plans, and how you feel about them — all in one place.
           </p>
         </div>
         <div className="flex flex-1 flex-col bg-zinc-50 p-4 dark:bg-zinc-950/80">
@@ -24,11 +24,11 @@ export function LandingFeatureCards() {
                 style={{ background: 'linear-gradient(135deg, #a78bfa, #7c3aed)' }}
                 aria-hidden
               >
-                MK
+                ME
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 dark:text-white">
-                  Maya Kim
+                  Mayak Egg
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
@@ -51,7 +51,7 @@ export function LandingFeatureCards() {
                 <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
                   📍 Location
                 </dt>
-                <dd className="text-foreground/90">Vancouver</dd>
+                <dd className="text-gray-500 dark:text-gray-500">Vancouver</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
@@ -69,11 +69,11 @@ export function LandingFeatureCards() {
       {/* Card 2 — Communities */}
       <article className="flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900/60">
         <div className="border-b border-gray-100 p-4 dark:border-white/10">
-          <h3 className="text-base font-semibold text-foreground">
-            Map your communities
+          <h3 className="text-black font-semibold">
+            Create constellations
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-            Group people into communities. Click any group to watch its
+            Organize people into any categories you want. Click any group to watch its
             constellation light up across your graph.
           </p>
         </div>

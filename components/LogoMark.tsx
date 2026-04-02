@@ -15,7 +15,7 @@ export function LogoMark({ textClassName }: LogoMarkProps) {
         style={{ fontFamily: 'Sohne' }}
         className={textClassName ?? 'text-2xl tracking-tight'}
       >
-        s
+        starmap
       </span>
       <StarIcon className="ml-1.5 shrink-0" />
     </Link>

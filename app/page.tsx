@@ -2,9 +2,9 @@ import { createServerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { DemoGraph } from '@/components/DemoGraph'
-import { CassiopeiaConstellation } from '@/components/landing/cassiopeia-constellation'
+import { FigmaDesktop47_40 } from '@/components/landing/figma-desktop-47-40'
+import { FIGMA_LANDING } from '@/lib/figma-landing-constants'
 import { LandingFeatureCards } from '@/components/landing/landing-feature-cards'
-import { Logo } from '@/components/Logo'
 import { SocialProof } from '@/components/SocialProof'
 import Link from 'next/link'
 
@@ -29,84 +29,43 @@ export default async function Home() {
     if (session) redirect('/dashboard')
   }
 
+  const heroH = `calc(100dvh - ${FIGMA_LANDING.navHeight}px)`
+
   return (
-    <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-16 pt-12 sm:px-6 sm:pt-20">
-        {/* SECTION 1 — Hero */}
-        <section className="flex flex-col items-center rounded-2xl bg-gray-50 px-4 py-16 text-center dark:bg-[#080B14] sm:px-6">
-          <p className="text-sm tracking-widest uppercase text-gray-400 dark:text-gray-500">
-            welcome to
-          </p>
-          <div className="mt-3">
-            <Logo textClassName="text-5xl tracking-tight md:text-7xl" />
-          </div>
-          <CassiopeiaConstellation />
-          <div className="mt-10 flex flex-col items-center gap-3">
-            <Link
-              href="/signup"
-              className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 dark:bg-foreground dark:text-background dark:hover:opacity-90"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 14 14"
-                fill="currentColor"
-                xmlns="http://www.w3.org/2000/svg"
-                className="shrink-0"
-                aria-hidden
-              >
-                <path d="M7 0 L8.2 5.8 L14 7 L8.2 8.2 L7 14 L5.8 8.2 L0 7 L5.8 5.8 Z" />
-              </svg>
-              <span>start now</span>
-            </Link>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Already have an account?{' '}
-              <Link
-                href="/login"
-                className="text-gray-700 underline decoration-gray-400 underline-offset-2 transition-colors hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
-              >
-                Sign in
-              </Link>
-              {' · '}
-              <Link
-                href="/dashboard"
-                className="text-gray-700 underline decoration-gray-400 underline-offset-2 transition-colors hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
-              >
-                Dashboard
-              </Link>
-            </p>
-          </div>
-          <p className="mt-2 text-sm tracking-wide text-gray-400 dark:text-gray-500">
-            Your world, mapped
-          </p>
-        </section>
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background max-w-[100vw]">
+      {/* Hero viewport: no scroll; body scales inside — Figma file xKwWnYVpMhOklOw8B0KG0n node 47:40 */}
+      <div
+        className="flex min-h-0 w-full shrink-0 flex-col overflow-hidden"
+        style={{ height: heroH, maxHeight: heroH }}
+      >
+        <FigmaDesktop47_40 />
+      </div>
 
-        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
-
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col px-4 pb-16 pt-0 sm:px-6">
         {/* Demo graph */}
         <section className="flex w-full min-w-0 flex-col items-center py-16">
-          <div className="w-full min-w-0 max-w-5xl">
+          <div className="w-full min-w-0 max-w-5xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
             <DemoGraph />
           </div>
         </section>
 
-        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+        <hr className="mx-auto my-0 max-w-xs border-gray-200" />
 
         {/* Feature cards */}
         <div className="py-16">
           <LandingFeatureCards />
         </div>
 
-        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+        <hr className="mx-auto my-0 max-w-xs border-gray-200" />
 
         {/* Social proof */}
         <SocialProof />
 
-        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+        <hr className="mx-auto my-0 max-w-xs border-gray-200" />
 
         {/* Why */}
-        <section className="mx-auto max-w-xl px-2 py-16 text-center">
-          <p className="text-xs tracking-widest text-gray-400 uppercase dark:text-gray-500">
+        <section className="mx-auto max-w-xl px-4 py-16 text-center sm:px-6">
+          <p className="text-xs tracking-widest text-gray-400 uppercase">
             why starmap exists
           </p>
           <div className="mt-6 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
@@ -114,16 +73,15 @@ export default async function Home() {
               I made Starmap because I wanted to be a better friend.
             </p>
             <p className="mb-4">
-              I wanted to remember the small things — what someone&apos;s allergic
-              to, their favourite film, what we talked about last time, our plans
-              we keep saying we&apos;ll make. I wanted to see how the people in my
-              life connect to each other, and hold onto the moments that matter.
+              Before this, I had a 2k word Notion doc with 70 people and journal-entry style notes on all of them. Someone joked that I had version-control on all my friends. I decided to write about everyone because I felt that I had no time and I wasn't sure who my real friends were. First I wrote to discover how I felt, and then I realized it was a useful tool to remember the small things — what someone&apos;s allergic
+              to, their favourite films, what we talked about, our plans
+              we keep saying we&apos;ll make.
             </p>
-            <p>This is a map of the people who make up your world.</p>
+            <p>This is my solution: a personal relationship management tool that organizes people by how they fit in your life and what they mean to you.</p>
           </div>
         </section>
 
-        <hr className="my-0 border-gray-100 dark:border-gray-800 max-w-xs mx-auto" />
+        <hr className="mx-auto my-0 max-w-xs border-gray-200" />
 
         {/* Contact */}
         <section className="mx-auto max-w-xl px-2 py-16 text-center">

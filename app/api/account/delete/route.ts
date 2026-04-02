@@ -1,12 +1,13 @@
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { withRateLimit } from '@/lib/api/with-rate-limit'
 
 /**
  * Deletes the authenticated user via service role (requires SUPABASE_SERVICE_ROLE_KEY).
  * Public tables cascade from auth.users → profiles → nodes/edges/etc.
  */
-export async function POST(request: Request) {
+export const POST = withRateLimit(async function POST(request: Request) {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -49,4 +50,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true })
-}
+},
+{
+  endpoint: '/api/account/delete',
+})

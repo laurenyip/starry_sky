@@ -37,6 +37,7 @@ import {
   customAttributesToRows,
   parseCustomAttributes,
   RELATIONSHIP_VALUES,
+  normalizeRelationship,
   relationshipTitle,
   rowsToCustomAttributes,
   scatterPersonInGroup,
@@ -59,6 +60,8 @@ import {
   type Edge,
   type Node,
 } from '@xyflow/react'
+import Papa from 'papaparse'
+import * as mammoth from 'mammoth'
 import '@xyflow/react/dist/style.css'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import Image from 'next/image'
@@ -359,6 +362,23 @@ function FriendGraphInner({
   const [connectCommunityId, setConnectCommunityId] = useState<string | null>(null)
   const [connectNote, setConnectNote] = useState('')
   const [connectErr, setConnectErr] = useState<string | null>(null)
+
+  const [importAiOpen, setImportAiOpen] = useState(false)
+  const [importAiText, setImportAiText] = useState('')
+  const [importAiFileName, setImportAiFileName] = useState<string | null>(null)
+  const [importAiSourceText, setImportAiSourceText] = useState<string>('')
+  const [importAiBusy, setImportAiBusy] = useState(false)
+  const [importAiStage, setImportAiStage] = useState<'input' | 'preview'>('input')
+  const [importAiPeople, setImportAiPeople] = useState<
+    {
+      id: string
+      name: string
+      relationship: string | null
+      location: string | null
+      things_to_remember: string | null
+      custom_attributes_text: string
+    }[]
+  >([])
   const [panelCommunityPicker, setPanelCommunityPicker] = useState('')
   const [pendingRelationTags, setPendingRelationTags] = useState<string[]>([])
   const [pendingCommunityId, setPendingCommunityId] = useState<string | null>(null)
@@ -1618,6 +1638,241 @@ function FriendGraphInner({
     showToast,
   ])
 
+  const resetImportAi = useCallback(() => {
+    setImportAiText('')
+    setImportAiFileName(null)
+    setImportAiSourceText('')
+    setImportAiBusy(false)
+    setImportAiStage('input')
+    setImportAiPeople([])
+  }, [])
+
+  const extractTextFromImportFile = useCallback(async (file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    if (ext === 'csv') {
+      const csvText = await file.text()
+      const parsed = Papa.parse<string[]>(csvText, {
+        skipEmptyLines: true,
+      })
+      if (parsed.errors?.length) {
+        throw new Error(parsed.errors[0]?.message || 'Failed to parse CSV')
+      }
+      const rows = (parsed.data ?? []) as unknown as string[][]
+      const text = rows
+        .map((r) =>
+          (r ?? [])
+            .map((cell) => String(cell ?? '').trim())
+            .filter(Boolean)
+            .join(' | ')
+        )
+        .filter(Boolean)
+        .join('\n')
+      return text
+    }
+    if (ext === 'txt') {
+      return await file.text()
+    }
+    if (ext === 'docx') {
+      const ab = await file.arrayBuffer()
+      const result = await mammoth.extractRawText({ arrayBuffer: ab })
+      return String((result as any)?.value ?? '').trim()
+    }
+    throw new Error('Unsupported file type')
+  }, [])
+
+  const runGeminiImport = useCallback(async () => {
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim()
+    if (!apiKey) {
+      showToast('Missing Gemini API key (NEXT_PUBLIC_GEMINI_API_KEY).', 'error')
+      return
+    }
+    const sourceText = (importAiText || importAiSourceText).trim()
+    if (!sourceText) {
+      showToast('Paste text or upload a file first.', 'error')
+      return
+    }
+
+    setImportAiBusy(true)
+    try {
+      const systemPrompt =
+        'You are a data extraction assistant. Extract all people mentioned in the text and return ONLY a valid JSON array, no markdown, no explanation. Each object should have these fields:\n{\n  \"name\": string,\n  \"relationship\": one of [\"friend\",\"family\",\"acquaintance\",\"colleague\",\"network\",\"romantic\",\"mentor\", \"enemy\", \"partner\"] or null,\n  \"location\": string or null,\n  \"things_to_remember\": string or null,\n  \"custom_attributes\": object or null\n}\nOnly include people, not organizations. If a field is unknown leave it null. Most general information can go into things_to_remember, custom_attributes is for stuff like birthday, contact information, favourite food, etc. For text similar to "Jan 7" or "feb 23" recognize those as an important date and put it into attributes.'
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
+          apiKey
+        )}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: sourceText }] }],
+            generationConfig: { temperature: 0.2 },
+          }),
+        }
+      )
+
+      const payload = (await res.json()) as any
+      const rawText =
+        payload?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).join('') ??
+        payload?.candidates?.[0]?.content?.parts?.[0]?.text ??
+        ''
+
+      const raw = String(rawText ?? '').trim()
+      const start = raw.indexOf('[')
+      const end = raw.lastIndexOf(']')
+      const jsonSlice = start >= 0 && end >= 0 && end > start ? raw.slice(start, end + 1) : raw
+
+      let arr: any
+      try {
+        arr = JSON.parse(jsonSlice)
+      } catch {
+        showToast('Could not parse response — try rephrasing your input.', 'error')
+        return
+      }
+      if (!Array.isArray(arr)) {
+        showToast('Could not parse response — try rephrasing your input.', 'error')
+        return
+      }
+
+      const next = arr
+        .map((p: any, idx: number) => {
+          const name = typeof p?.name === 'string' ? p.name.trim() : ''
+          const relationship =
+            p?.relationship == null ? null : String(p.relationship).trim().toLowerCase()
+          const location = typeof p?.location === 'string' ? p.location.trim() : null
+          const things =
+            typeof p?.things_to_remember === 'string'
+              ? p.things_to_remember.trim()
+              : null
+          const attrs = p?.custom_attributes
+          const attrsText =
+            attrs && typeof attrs === 'object' && !Array.isArray(attrs)
+              ? JSON.stringify(attrs, null, 2)
+              : ''
+          return {
+            id: `ai-${Date.now()}-${idx}`,
+            name,
+            relationship: relationship || null,
+            location: location && location.length ? location : null,
+            things_to_remember: things && things.length ? things : null,
+            custom_attributes_text: attrsText,
+          }
+        })
+        .filter((p: any) => p.name)
+
+      setImportAiPeople(next)
+      setImportAiStage('preview')
+    } catch (e) {
+      console.error('[import-ai]', e)
+      showToast('Could not parse response — try rephrasing your input.', 'error')
+    } finally {
+      setImportAiBusy(false)
+    }
+  }, [importAiText, importAiSourceText, showToast])
+
+  const addImportedPeopleToGraph = useCallback(async () => {
+    if (importAiPeople.length === 0) return
+
+    setImportAiBusy(true)
+    try {
+      const existingLocByName = new Map(
+        locations.map((l) => [l.name.trim().toLowerCase(), l.id])
+      )
+      const locationIdByName = new Map(existingLocByName)
+
+      const ensureLocationId = async (name: string): Promise<string | null> => {
+        const t = name.trim()
+        if (!t) return null
+        const key = t.toLowerCase()
+        const existing = locationIdByName.get(key)
+        if (existing) return existing
+        const { data, error } = await supabase
+          .from('locations')
+          .insert({ user_id: userId, name: t })
+          .select('id')
+          .single()
+        if (error) throw error
+        const id = String((data as any)?.id ?? '')
+        if (id) locationIdByName.set(key, id)
+        return id || null
+      }
+
+      const groupCounts = new Map<string | null, number>()
+      for (const p of people) {
+        const key = (p.location_id ?? null) as string | null
+        groupCounts.set(key, (groupCounts.get(key) ?? 0) + 1)
+      }
+
+      const rows: any[] = []
+      for (const p of importAiPeople) {
+        const name = p.name.trim()
+        if (!name) continue
+        const locId = p.location ? await ensureLocationId(p.location) : null
+
+        const prevCount = groupCounts.get(locId) ?? 0
+        const pos = scatterPersonInGroup(prevCount, prevCount + 1)
+        groupCounts.set(locId, prevCount + 1)
+
+        let attrs: Record<string, unknown> = {}
+        const attrsRaw = p.custom_attributes_text?.trim()
+        if (attrsRaw) {
+          try {
+            const parsed = JSON.parse(attrsRaw)
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) attrs = parsed
+          } catch {
+            // ignore; keep attrs empty
+          }
+        }
+
+        const relRaw = p.relationship ? String(p.relationship) : ''
+        const rel =
+          relRaw === 'partner' ? 'romantic' : relRaw === 'enemy' ? 'network' : relRaw
+
+        rows.push({
+          owner_id: userId,
+          name,
+          relationship: normalizeRelationship(rel),
+          location_id: locId,
+          things_to_remember: p.things_to_remember?.trim() || '',
+          custom_attributes: attrs,
+          position_x: pos.x,
+          position_y: pos.y,
+        })
+      }
+
+      if (rows.length === 0) {
+        showToast('No valid people to add.', 'error')
+        return
+      }
+
+      const { error } = await supabase.from('nodes').insert(rows)
+      if (error) {
+        showToast(error.message || 'Failed to import people.', 'error')
+        return
+      }
+
+      await loadData()
+      showToast(`${rows.length} people added ✓`, 'success')
+      setImportAiOpen(false)
+      resetImportAi()
+    } catch (e) {
+      console.error('[import-ai-add]', e)
+      showToast('Failed to import people.', 'error')
+    } finally {
+      setImportAiBusy(false)
+    }
+  }, [
+    importAiPeople,
+    locations,
+    people,
+    supabase,
+    userId,
+    loadData,
+    showToast,
+    resetImportAi,
+  ])
+
   const removePanelConnection = useCallback(
     async (otherId: string) => {
       if (!selectedPerson) return
@@ -2782,12 +3037,295 @@ function FriendGraphInner({
         </button>
         <button
           type="button"
+          onClick={() => {
+            setImportAiOpen(true)
+          }}
+          className="rounded-full border border-zinc-300 bg-background px-4 py-3 text-sm font-medium shadow dark:border-zinc-600"
+        >
+          Import with AI
+        </button>
+        <button
+          type="button"
           onClick={() => void loadData()}
           className="rounded-full border border-zinc-300 bg-background px-4 py-3 text-sm font-medium shadow dark:border-zinc-600"
         >
           Refresh
         </button>
       </div>
+
+      {importAiOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-200 bg-background shadow-xl dark:border-zinc-700">
+            <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
+              <div>
+                <h3 className="text-base font-semibold">Import People with AI</h3>
+                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  Paste text or upload a file. We&apos;ll extract people into editable cards before adding them.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-xl leading-none text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                onClick={() => {
+                  setImportAiOpen(false)
+                  resetImportAi()
+                }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {importAiStage === 'input' ? (
+              <div className="space-y-4 p-5">
+                <div>
+                  <label className="mb-2 block text-sm font-medium">Text input</label>
+                  <textarea
+                    value={importAiText}
+                    onChange={(e) => setImportAiText(e.target.value)}
+                    placeholder="Paste anything here: notes, emails, a bio, a meeting recap, etc."
+                    rows={10}
+                    className="w-full resize-y rounded-xl border border-zinc-300 bg-background px-3 py-2 text-sm outline-none focus:border-zinc-400 dark:border-zinc-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">Or upload a file</label>
+                  <div className="flex flex-col gap-2 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                    <input
+                      type="file"
+                      accept=".csv,.txt,.docx"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        e.target.value = ''
+                        if (!f) return
+                        setImportAiFileName(f.name)
+                        setImportAiBusy(true)
+                        void (async () => {
+                          try {
+                            const text = await extractTextFromImportFile(f)
+                            setImportAiSourceText(text)
+                            showToast('File ready ✓', 'success')
+                          } catch (err) {
+                            console.error('[import-ai-file]', err)
+                            showToast('Could not read that file.', 'error')
+                            setImportAiFileName(null)
+                            setImportAiSourceText('')
+                          } finally {
+                            setImportAiBusy(false)
+                          }
+                        })()
+                      }}
+                      className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:opacity-90 dark:file:bg-zinc-100 dark:file:text-zinc-900"
+                    />
+                    {importAiFileName ? (
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        Selected: <span className="font-medium">{importAiFileName}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-600"
+                    onClick={() => {
+                      setImportAiOpen(false)
+                      resetImportAi()
+                    }}
+                    disabled={importAiBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+                    disabled={importAiBusy}
+                    onClick={() => void runGeminiImport()}
+                  >
+                    {importAiBusy ? 'Parsing…' : 'Extract people'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {importAiPeople.length}
+                    </span>{' '}
+                    people found.
+                  </p>
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-zinc-600 hover:underline dark:text-zinc-400"
+                    onClick={() => setImportAiStage('input')}
+                    disabled={importAiBusy}
+                  >
+                    ← Back to input
+                  </button>
+                </div>
+
+                <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+                  {importAiPeople.map((p) => (
+                    <div
+                      key={p.id}
+                      className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900/40"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 space-y-2">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                Name
+                              </label>
+                              <input
+                                value={p.name}
+                                onChange={(e) =>
+                                  setImportAiPeople((prev) =>
+                                    prev.map((x) =>
+                                      x.id === p.id ? { ...x, name: e.target.value } : x
+                                    )
+                                  )
+                                }
+                                className="w-full rounded-lg border border-zinc-300 bg-background px-3 py-2 text-sm dark:border-zinc-600"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                Relationship
+                              </label>
+                              <select
+                                value={p.relationship ?? ''}
+                                onChange={(e) =>
+                                  setImportAiPeople((prev) =>
+                                    prev.map((x) =>
+                                      x.id === p.id
+                                        ? { ...x, relationship: e.target.value || null }
+                                        : x
+                                    )
+                                  )
+                                }
+                                className="w-full rounded-lg border border-zinc-300 bg-background px-3 py-2 text-sm dark:border-zinc-600"
+                              >
+                                <option value="">Unknown</option>
+                                {RELATIONSHIP_VALUES.map((r) => (
+                                  <option key={r} value={r}>
+                                    {relationshipTitle(r)}
+                                  </option>
+                                ))}
+                                <option value="partner">Partner</option>
+                                <option value="enemy">Enemy</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                                Location
+                              </label>
+                              <input
+                                value={p.location ?? ''}
+                                onChange={(e) =>
+                                  setImportAiPeople((prev) =>
+                                    prev.map((x) =>
+                                      x.id === p.id
+                                        ? { ...x, location: e.target.value || null }
+                                        : x
+                                    )
+                                  )
+                                }
+                                className="w-full rounded-lg border border-zinc-300 bg-background px-3 py-2 text-sm dark:border-zinc-600"
+                                placeholder="e.g. Vancouver"
+                              />
+                            </div>
+                            <div />
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                              Things to remember
+                            </label>
+                            <textarea
+                              value={p.things_to_remember ?? ''}
+                              onChange={(e) =>
+                                setImportAiPeople((prev) =>
+                                  prev.map((x) =>
+                                    x.id === p.id
+                                      ? { ...x, things_to_remember: e.target.value || null }
+                                      : x
+                                  )
+                                )
+                              }
+                              rows={3}
+                              className="w-full resize-y rounded-lg border border-zinc-300 bg-background px-3 py-2 text-sm dark:border-zinc-600"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                              Custom attributes (JSON)
+                            </label>
+                            <textarea
+                              value={p.custom_attributes_text}
+                              onChange={(e) =>
+                                setImportAiPeople((prev) =>
+                                  prev.map((x) =>
+                                    x.id === p.id
+                                      ? { ...x, custom_attributes_text: e.target.value }
+                                      : x
+                                  )
+                                )
+                              }
+                              rows={4}
+                              className="w-full resize-y rounded-lg border border-zinc-300 bg-background px-3 py-2 font-mono text-xs dark:border-zinc-600"
+                              placeholder='e.g. {"birthday":"1998-03-15","instagram":"@handle"}'
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                          onClick={() =>
+                            setImportAiPeople((prev) => prev.filter((x) => x.id !== p.id))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-600"
+                    onClick={() => {
+                      setImportAiOpen(false)
+                      resetImportAi()
+                    }}
+                    disabled={importAiBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+                    disabled={importAiBusy || importAiPeople.length === 0}
+                    onClick={() => void addImportedPeopleToGraph()}
+                  >
+                    {importAiBusy ? 'Adding…' : 'Add to Graph'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {addConnectionOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
