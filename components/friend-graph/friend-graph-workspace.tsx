@@ -1681,11 +1681,6 @@ function FriendGraphInner({
   }, [])
 
   const runGeminiImport = useCallback(async () => {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim()
-    if (!apiKey) {
-      showToast('Missing Gemini API key (NEXT_PUBLIC_GEMINI_API_KEY).', 'error')
-      return
-    }
     const sourceText = (importAiText || importAiSourceText).trim()
     if (!sourceText) {
       showToast('Paste text or upload a file first.', 'error')
@@ -1694,42 +1689,20 @@ function FriendGraphInner({
 
     setImportAiBusy(true)
     try {
-      const systemPrompt =
-        'You are a data extraction assistant. Extract all people mentioned in the text and return ONLY a valid JSON array, no markdown, no explanation. Each object should have these fields:\n{\n  \"name\": string,\n  \"relationship\": one of [\"friend\",\"family\",\"acquaintance\",\"colleague\",\"network\",\"romantic\",\"mentor\", \"enemy\", \"partner\"] or null,\n  \"location\": string or null,\n  \"things_to_remember\": string or null,\n  \"custom_attributes\": object or null\n}\nOnly include people, not organizations. If a field is unknown leave it null. Most general information can go into things_to_remember, custom_attributes is for stuff like birthday, contact information, favourite food, etc. For text similar to "Jan 7" or "feb 23" recognize those as an important date and put it into attributes.'
+      const res = await fetch('/api/ai/extract-nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: sourceText }),
+      })
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-          apiKey
-        )}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: sourceText }] }],
-            generationConfig: { temperature: 0.2 },
-          }),
-        }
-      )
+      const payload = (await res.json()) as { people?: unknown[]; error?: string }
 
-      const payload = (await res.json()) as any
-      const rawText =
-        payload?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).join('') ??
-        payload?.candidates?.[0]?.content?.parts?.[0]?.text ??
-        ''
-
-      const raw = String(rawText ?? '').trim()
-      const start = raw.indexOf('[')
-      const end = raw.lastIndexOf(']')
-      const jsonSlice = start >= 0 && end >= 0 && end > start ? raw.slice(start, end + 1) : raw
-
-      let arr: any
-      try {
-        arr = JSON.parse(jsonSlice)
-      } catch {
-        showToast('Could not parse response — try rephrasing your input.', 'error')
+      if (!res.ok) {
+        showToast(payload?.error || 'Could not parse response — try rephrasing your input.', 'error')
         return
       }
+
+      const arr = payload?.people
       if (!Array.isArray(arr)) {
         showToast('Could not parse response — try rephrasing your input.', 'error')
         return
@@ -1912,7 +1885,7 @@ function FriendGraphInner({
     setNewCommunityOpen(false)
     setNewCommunityName('')
     setNewCommunityColor('#FF6B6B')
-    showToast('Community created.', 'success')
+    showToast('Constellation created.', 'success')
     await loadData()
   }, [
     newCommunityName,
@@ -1929,7 +1902,7 @@ function FriendGraphInner({
     const color = editCommunityColor
     if (!id) return
     if (!name) {
-      showToast('Community name is required.', 'error')
+      showToast('Constellation name is required.', 'error')
       return
     }
 
@@ -1965,7 +1938,7 @@ function FriendGraphInner({
     setEditCommunityOpen(false)
     setEditCommunityId(null)
     setSavingCommunityEdit(false)
-    showToast('Community updated ✓', 'success')
+    showToast('Constellation updated ✓', 'success')
   }, [editCommunityId, editCommunityName, editCommunityColor, supabase, userId, showToast])
 
   const onGalleryPrimaryAvatarChange = useCallback(
@@ -2078,7 +2051,7 @@ function FriendGraphInner({
       }
       await refreshNodeCommunities()
       const comm = communities.find((c) => c.id === cid)
-      showToast(`Added to ${comm?.name ?? 'community'} ✓`, 'success')
+      showToast(`Added to ${comm?.name ?? 'constellation'} ✓`, 'success')
       setSelectedNodeIds(new Set())
       setBulkMenuOpen(null)
     },
@@ -2558,7 +2531,7 @@ function FriendGraphInner({
         <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-zinc-300/80 bg-background/95 px-3 py-1 text-xs text-zinc-700 shadow dark:border-zinc-700 dark:text-zinc-300">
           Click nodes to add/remove from{' '}
           <span className="font-semibold">
-            {communities.find((c) => c.id === assignCommunityId)?.name ?? 'community'}
+            {communities.find((c) => c.id === assignCommunityId)?.name ?? 'constellation'}
           </span>
           . Click ✏️ again or press Esc to exit.
         </div>
@@ -2790,7 +2763,7 @@ function FriendGraphInner({
               {bulkMenuOpen === 'community' ? (
                 <div className="absolute bottom-full left-1/2 z-[60] mb-2 max-h-56 min-w-[14rem] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-600 dark:bg-zinc-900">
                   {communities.length === 0 ? (
-                    <p className="px-2 py-1 text-xs text-zinc-500">No communities yet</p>
+                    <p className="px-2 py-1 text-xs text-zinc-500">No constellations yet</p>
                   ) : (
                     communities.map((c) => (
                       <button
@@ -2884,7 +2857,7 @@ function FriendGraphInner({
                 <span className="text-violet-400" aria-hidden>
                   ●
                 </span>
-                Add to community
+                Add to constellation
               </button>
               <button
                 type="button"
@@ -3392,7 +3365,7 @@ function FriendGraphInner({
                 )
               })}
             </div>
-            <label className="mt-3 block text-sm font-medium">Community (optional)</label>
+            <label className="mt-3 block text-sm font-medium">Constellation (optional)</label>
             <select
               value={connectCommunityId ?? ''}
               onChange={(e) => setConnectCommunityId(normalizeCommunityId(e.target.value))}
@@ -3460,7 +3433,7 @@ function FriendGraphInner({
                 )
               })}
             </div>
-            <label className="mt-3 block text-sm font-medium">Community (optional)</label>
+            <label className="mt-3 block text-sm font-medium">Constellation (optional)</label>
             <select
               value={pendingCommunityId ?? ''}
               onChange={(e) =>
@@ -3468,7 +3441,7 @@ function FriendGraphInner({
               }
               className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
             >
-              <option value="">No community</option>
+              <option value="">No constellation</option>
               {communities.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -3537,7 +3510,7 @@ function FriendGraphInner({
               )
             })}
           </div>
-          <label className="mt-3 block text-sm font-medium">Community (optional)</label>
+          <label className="mt-3 block text-sm font-medium">Constellation (optional)</label>
           <select
             value={selectedEdgeCommunityId ?? ''}
             onChange={(e) => {
@@ -3547,7 +3520,7 @@ function FriendGraphInner({
             }}
             className="mt-1 w-full rounded-md border px-3 py-2 text-sm dark:border-zinc-600"
           >
-            <option value="">No community</option>
+            <option value="">No constellation</option>
             {communities.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

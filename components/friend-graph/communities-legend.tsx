@@ -65,7 +65,7 @@ export function CommunitiesLegend({
   return (
     <div className="pointer-events-auto z-20 flex w-full min-w-0 flex-col rounded-xl border border-zinc-200/90 bg-background/95 p-3 shadow-lg backdrop-blur-md dark:border-zinc-700/90">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-        Communities
+        Constellations
       </p>
       <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
         <li>
@@ -106,7 +106,7 @@ export function CommunitiesLegend({
                 <span className="flex-1 truncate text-sm">{c.name}</span>
                 <button
                   type="button"
-                  title="View community"
+                  title="View constellation"
                   className="cursor-pointer rounded px-1 text-xs transition-colors hover:bg-white/10 dark:hover:bg-white/10"
                   onClick={() => onPickCommunity(c.id)}
                 >
@@ -114,7 +114,7 @@ export function CommunitiesLegend({
                 </button>
                 <button
                   type="button"
-                  title="Edit community"
+                  title="Edit constellation"
                   className="cursor-pointer rounded px-1 text-xs transition-colors hover:bg-white/10 dark:hover:bg-white/10"
                   onClick={() => onEditCommunity(c)}
                 >
@@ -130,7 +130,7 @@ export function CommunitiesLegend({
         onClick={onNewCommunity}
         className="mt-3 w-full rounded-lg border border-dashed border-zinc-300 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800/80"
       >
-        + New community
+        + New constellation
       </button>
       <button
         type="button"

@@ -1,3 +1,5 @@
+import { imgCalendarAlt } from '@/lib/figma-landing-assets'
+
 export function LandingFeatureCards() {
   return (
     <section className="mx-auto w-full max-w-5xl px-4 sm:px-0" aria-labelledby="features-heading">
@@ -17,51 +19,56 @@ export function LandingFeatureCards() {
           </p>
         </div>
         <div className="flex flex-1 flex-col bg-zinc-50 p-4 dark:bg-zinc-950/80">
-          <div className="rounded-xl border border-zinc-200/80 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+          {/* Figma node 87:532 — person detail card */}
+          <div
+            className="rounded-xl border border-[rgba(212,212,216,0.8)] bg-white p-3 shadow-sm dark:border-white/10 dark:bg-zinc-900/60"
+            data-node-id="87:532"
+          >
             <div className="flex gap-3">
               <div
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                style={{ background: 'linear-gradient(135deg, #a78bfa, #7c3aed)' }}
+                style={{ background: 'linear-gradient(180deg, #8e51ff 0%, #acffc1 100%)' }}
                 aria-hidden
               >
                 ME
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                <p className="text-sm font-medium text-[#101828] dark:text-white">
                   Mayak Egg
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-1">
-                  <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: 'rgba(0,188,125,0.15)', color: '#007a55' }}>
                     Close Friend
                   </span>
-                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                  <span className="rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: 'rgba(142,81,255,0.15)', color: '#31009f' }}>
                     Colleague
                   </span>
                 </div>
               </div>
             </div>
-            <dl className="mt-3 space-y-1.5 text-[11px] text-gray-600 dark:text-gray-400">
+            <dl className="mt-3 space-y-1.5 text-[11px]">
               <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
-                  🎂 Birthday
-                </dt>
-                <dd className="text-gray-800 dark:text-white/90">March 15 · in 47 days</dd>
+                <dt className="w-24 shrink-0 text-[#6a7282]">LOCATION</dt>
+                <dd className="text-[#1e2939] dark:text-white/90">Vancouver, BC</dd>
               </div>
-              <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
-                  📍 Location
-                </dt>
-                <dd className="text-gray-500 dark:text-gray-500">Vancouver</dd>
-              </div>
-              <div className="flex gap-2">
-                <dt className="w-24 shrink-0 text-gray-500 dark:text-gray-500">
-                  📝 Note
-                </dt>
-                <dd className="text-gray-800 dark:text-white/90">
-                  Loves hiking and terrible puns
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-[#6a7282]">THINGS TO REMEMBER</dt>
+                <dd className="text-[#1e2939] leading-relaxed dark:text-white/90">
+                  A little salty but a great egg snack, especially with rice.
+                  Loves hiking and is always late.
                 </dd>
               </div>
             </dl>
+            <div className="mt-3 space-y-1.5">
+              <p className="text-[11px] text-[#6a7282]">CUSTOM ATTRIBUTES</p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-[#1e2939] dark:text-white/90">
+                  Birthday: 2002-09-21
+                </span>
+                <img src={imgCalendarAlt} alt="" className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
+              </div>
+            </div>
+            <p className="mt-3 text-[11px] text-[#6a7282]">PHOTOS</p>
           </div>
         </div>
       </article>
@@ -73,7 +80,7 @@ export function LandingFeatureCards() {
             Create constellations
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-            Organize people into any categories you want. Click any group to watch its
+            Sort people into any categories you want. Click any group to watch its
             constellation light up across your graph.
           </p>
         </div>

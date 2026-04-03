@@ -63,7 +63,7 @@ export function Navbar() {
     username ?? session?.user.email?.split('@')[0] ?? null
 
   return (
-    <header className="sticky top-0 z-50 border-b border-zinc-200/80 bg-background/80 backdrop-blur-md dark:border-zinc-800/80">
+    <header className="sticky top-0 z-50 border-b border-[rgba(228,228,231,0.8)] bg-white/80 backdrop-blur-md dark:border-zinc-800/80 dark:bg-[#0a0a0f]/80" data-node-id="64:492">
       <div className="mx-auto flex max-w-5xl flex-col gap-1.5 px-3 py-2.5 sm:px-6 sm:py-3">
         <div className="flex items-center justify-between gap-3">
           <LogoMark />
@@ -97,13 +97,15 @@ export function Navbar() {
                 <ThemeToggle />
                 <Link
                   href="/login"
-                  className="font-medium text-zinc-600 transition-colors hover:text-foreground dark:text-zinc-400"
+                  className="font-medium text-gray-600 transition-colors hover:text-black dark:text-zinc-400"
+                  data-node-id="64:512"
                 >
                   Log in
                 </Link>
                 <Link
                   href="/signup"
-                  className="shrink-0 rounded-md bg-foreground px-2.5 py-1.5 font-medium text-background transition-opacity hover:opacity-90 sm:px-3"
+                  className="shrink-0 rounded-[6px] bg-black px-3 py-1.5 font-medium text-white transition-opacity hover:opacity-80 dark:bg-white dark:text-black"
+                  data-node-id="64:517"
                 >
                   Sign up
                 </Link>

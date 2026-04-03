@@ -1,7 +1,6 @@
 'use client'
 
 import {
-  birthdayAge,
   canonicalDate,
   daysUntilCalendarDate,
   daysUntilNextAnnualEvent,
@@ -96,24 +95,7 @@ export function DateAttributeField({ attrKey, value, onChange, onBlurPersist }: 
   let meta: ReactNode = null
 
   if (kind === 'birthday') {
-    if (c.parseable && ymd) {
-      const until = daysUntilNextAnnualEvent(ymd)
-      const todayB = isAnnualDateToday(ymd)
-      meta = (
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          {formatLongDate(ymd)}
-          {birthdayAge(ymd) != null ? ` · Age: ${birthdayAge(ymd)}` : ''}
-          {until !== null ? (
-            <>
-              {' · '}
-              {todayB || until === 0
-                ? '🎂 Today!'
-                : `🎂 in ${until} days`}
-            </>
-          ) : null}
-        </p>
-      )
-    } else if (value.trim()) {
+    if (!c.parseable && value.trim()) {
       meta = (
         <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
           ⚠ Unrecognised date format — use YYYY-MM-DD or pick a date.

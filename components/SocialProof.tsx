@@ -1,5 +1,11 @@
 'use client'
 
+/**
+ * Figma node 64:261 — Social proof section.
+ * "Adopted by cool people for dope shit" headline with scramble animation.
+ * Two scrolling rows of person pills, each with a colored ✦ star per Figma spec.
+ * Pill design: bg #f3f4f6, border #e5e7eb, rounded-full, text #4a5565 (River Bed).
+ */
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 
 const HEADLINES = [
@@ -14,50 +20,50 @@ function randomChar(): string {
   return SCRAMBLE_CHARSET[Math.floor(Math.random() * SCRAMBLE_CHARSET.length)]!
 }
 
-const ROW_1 = [
-  'Keane Moraes',
-  'Mia Chen',
-  'Matthew Kuo',
-  'Jordan Park',
-  'Ayse Apacik',
-  'Alex Rivera',
-  'Yoona Charland',
-  'Sophie Kim',
-  'Brian Rahadi',
-  'Marcus Webb',
-  'Hemant Dhokia',
-  'Zara Ahmed',
-  'Yogya Agrawal',
-  "Finn O'Brien",
-  'Lena Bauer',
-  'Kai Nakamura',
-  'Isla Scott',
-  'Remy Dubois',
-  'Nadia Osei',
-  'Theo Walsh',
+const ROW_1: [string, string][] = [
+  ['Keane Moraes',   '#FC9874'],
+  ['Mia Chen',       '#8BC5DD'],
+  ['Matthew Kuo',    '#7154A6'],
+  ['Jordan Park',    '#FA899D'],
+  ['Ayse Apacik',    '#FE9F67'],
+  ['Alex Rivera',    '#8277C6'],
+  ['Yoona Charland', '#F6C2C4'],
+  ['Sophie Kim',     '#FC9874'],
+  ['Brian Rahadi',   '#8BC5DD'],
+  ['Marcus Webb',    '#7154A6'],
+  ['Hemant Dhokia',  '#FA899D'],
+  ['Zara Ahmed',     '#FE9F67'],
+  ['Yogya Agrawal',  '#8277C6'],
+  ["Finn O'Brien",   '#F6C2C4'],
+  ['Lena Bauer',     '#FC9874'],
+  ['Kai Nakamura',   '#8BC5DD'],
+  ['Isla Scott',     '#7154A6'],
+  ['Remy Dubois',    '#FA899D'],
+  ['Nadia Osei',     '#FE9F67'],
+  ['Theo Walsh',     '#8277C6'],
 ]
 
-const ROW_2 = [
-  'Soren Berg',
-  'Mila Russo',
-  'Jayson Tram',
-  'Ash Brennan',
-  'Vera Popov',
-  'Eric Cosma',
-  'Indigo Flores',
-  'Luca Ferrari',
-  'Han Pham',
-  'Reed Nakamura',
-  'Sage Butler',
-  'Aria Kovacs',
-  'Flynn Nguyen',
-  'Ines Carvalho',
-  'Rex Yamamoto',
-  'Tara Okafor',
-  'Dex Williams',
-  'Orion Castillo',
-  'Faye Lin',
-  'Cruz Mendez',
+const ROW_2: [string, string][] = [
+  ['Soren Berg',     '#F6C2C4'],
+  ['Mila Russo',     '#FC9874'],
+  ['Jayson Tram',    '#8BC5DD'],
+  ['Ash Brennan',    '#7154A6'],
+  ['Vera Popov',     '#FA899D'],
+  ['Eric Cosma',     '#FE9F67'],
+  ['Indigo Flores',  '#8277C6'],
+  ['Luca Ferrari',   '#F6C2C4'],
+  ['Han Pham',       '#FC9874'],
+  ['Reed Nakamura',  '#8BC5DD'],
+  ['Sage Butler',    '#7154A6'],
+  ['Aria Kovacs',    '#FA899D'],
+  ['Flynn Nguyen',   '#FE9F67'],
+  ['Ines Carvalho',  '#8277C6'],
+  ['Rex Yamamoto',   '#F6C2C4'],
+  ['Tara Okafor',    '#FC9874'],
+  ['Dex Williams',   '#8BC5DD'],
+  ['Orion Castillo', '#7154A6'],
+  ['Faye Lin',       '#FA899D'],
+  ['Cruz Mendez',    '#FE9F67'],
 ]
 
 const FADE_MASK: CSSProperties = {
@@ -148,9 +154,13 @@ export function SocialProof() {
   }, [clearScramble, runScrambleTo])
 
   return (
-    <section className="flex w-full min-w-0 flex-col items-center gap-8 overflow-hidden py-16">
+    <section
+      className="flex w-full min-w-0 flex-col items-center gap-8 overflow-hidden py-16"
+      data-node-id="64:261"
+    >
+      {/* Headline with scramble effect (node 64:263) */}
       <p
-        className={`max-w-[min(100%,42rem)] text-center text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500 sm:text-sm ${
+        className={`max-w-[min(100%,42rem)] text-center text-[12px] uppercase tracking-[1.2px] text-[#99a1af] dark:text-gray-500 ${
           isScrambling ? 'font-mono' : 'font-sans'
         }`}
       >
@@ -158,14 +168,19 @@ export function SocialProof() {
       </p>
 
       <div className="flex w-full flex-col gap-3">
+        {/* Row 1 — scrolls left (node 64:266–64:365) */}
         <div className="w-full overflow-hidden" style={FADE_MASK}>
           <div className="flex w-max gap-3 animate-scroll-left hover:[animation-play-state:paused]">
-            {[...ROW_1, ...ROW_1].map((name, i) => (
+            {[...ROW_1, ...ROW_1].map(([name, starColor], i) => (
               <span
                 key={`r1-${i}-${name}`}
-                className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-gray-200 bg-gray-100 px-4 py-1.5 text-sm text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#e5e7eb] bg-[#f3f4f6] px-[17px] py-[7px] text-[14px] text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
               >
-                <span className="mr-1.5 text-gray-300 dark:text-gray-600" aria-hidden>
+                <span
+                  className="shrink-0 text-[14px] leading-none"
+                  style={{ color: starColor }}
+                  aria-hidden
+                >
                   ✦
                 </span>
                 {name}
@@ -174,14 +189,19 @@ export function SocialProof() {
           </div>
         </div>
 
+        {/* Row 2 — scrolls right (node 64:367–64:463) */}
         <div className="w-full overflow-hidden" style={FADE_MASK}>
           <div className="flex w-max gap-3 animate-scroll-right hover:[animation-play-state:paused]">
-            {[...ROW_2, ...ROW_2].map((name, i) => (
+            {[...ROW_2, ...ROW_2].map(([name, starColor], i) => (
               <span
                 key={`r2-${i}-${name}`}
-                className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-gray-200 bg-gray-100 px-4 py-1.5 text-sm text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-400"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#e5e7eb] bg-[#f3f4f6] px-[17px] py-[7px] text-[14px] text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
               >
-                <span className="mr-1.5 text-gray-300 dark:text-gray-600" aria-hidden>
+                <span
+                  className="shrink-0 text-[14px] leading-none"
+                  style={{ color: starColor }}
+                  aria-hidden
+                >
                   ✦
                 </span>
                 {name}

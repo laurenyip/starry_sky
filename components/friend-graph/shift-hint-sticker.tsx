@@ -53,7 +53,7 @@ export function ShiftHintSticker({ visible }: { visible: boolean }) {
       </button>
       <p className="pr-5 text-xs leading-snug text-yellow-900 dark:text-yellow-200">
         ✦ Hold Shift and click multiple nodes to connect them or add them to a
-        community or location
+        constellation or location
       </p>
     </div>
   )

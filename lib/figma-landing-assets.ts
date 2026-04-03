@@ -1,5 +1,16 @@
 /** Latest URLs from Figma MCP get_design_context — refresh if assets expire (~7d). */
 
+/** Figma node 64:3 (1920w light) — hero + how-it-works assets */
+/** Node 85:439 — constellation SVG in hero below heading */
+export const imgHeroConstellation =
+  'https://www.figma.com/api/mcp/asset/dec81a51-4b61-4719-ba95-234ef59435d9'
+/** Node 64:36 — ✦ icon to the right of the hero heading */
+export const imgLogoPlus =
+  'https://www.figma.com/api/mcp/asset/24ad396f-e86d-4717-93f0-2f356dcc2301'
+/** Node 91:584 — calendar icon in person card custom attributes */
+export const imgCalendarAlt =
+  'https://www.figma.com/api/mcp/asset/90c2a88d-8a2e-4955-9efa-182f7883d280'
+
 export const imgLine1 =
   'https://www.figma.com/api/mcp/asset/5156c010-3849-4848-9010-9f672dfae3d5'
 export const imgStar1 =
