@@ -1,6 +1,7 @@
 import { Navbar } from '@/components/navbar'
 import { SupabaseProvider } from '@/components/supabase-provider'
 import { ToastProvider } from '@/components/toast-provider'
+import { Analytics } from '@vercel/analytics/next'
 import type { Metadata } from 'next'
 import { Inter } from "next/font/google"
 import './globals.css'
@@ -61,6 +62,7 @@ export default function RootLayout({
             <main className="flex min-h-0 flex-1 flex-col">{children}</main>
           </ToastProvider>
         </SupabaseProvider>
+        <Analytics />
       </body>
     </html>
   )
