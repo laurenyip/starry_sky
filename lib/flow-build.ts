@@ -46,6 +46,8 @@ export type FlowBuildOptions = {
   communityColors?: Map<string, string>
   /** Node id for the signed-in user ("You"); used with edge.relation_type for borders. */
   selfNodeId?: string | null
+  /** Recently inserted via AI import — temporary highlight on the graph. */
+  aiImportGlowIds?: readonly string[] | null
 }
 
 function normalizeCommunityId(value: string | null | undefined): string | null {
@@ -179,6 +181,8 @@ export function buildFlowElements(
     anchors.set(loc.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius })
   })
 
+  const aiGlowSet = new Set(options.aiImportGlowIds ?? [])
+
   for (const loc of sortedLocs) {
     const group = peopleByLoc.get(loc.id) ?? []
     const locInternal = internalEdges.filter((e) => {
@@ -212,6 +216,7 @@ export function buildFlowElements(
           avatarUrl: p.avatar_url ?? null,
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
+          aiImportGlow: aiGlowSet.has(p.id),
           relationBorderHex: relationBorderForPerson(p),
           isSelf: p.is_self,
         },
@@ -254,6 +259,7 @@ export function buildFlowElements(
           avatarUrl: p.avatar_url ?? null,
           shiftConnect: options.shiftConnect ?? false,
           justAdded: options.highlightPersonId === p.id,
+          aiImportGlow: aiGlowSet.has(p.id),
           relationBorderHex: relationBorderForPerson(p),
           isSelf: p.is_self,
         },

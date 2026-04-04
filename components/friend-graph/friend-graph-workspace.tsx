@@ -363,6 +363,11 @@ function FriendGraphInner({
   const [connectNote, setConnectNote] = useState('')
   const [connectErr, setConnectErr] = useState<string | null>(null)
 
+  const [showHelp, setShowHelp] = useState(false)
+  const [helpModalEntered, setHelpModalEntered] = useState(false)
+  const [aiGlowNodeIds, setAiGlowNodeIds] = useState<string[]>([])
+  const aiGlowClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const [importAiOpen, setImportAiOpen] = useState(false)
   const [importAiText, setImportAiText] = useState('')
   const [importAiFileName, setImportAiFileName] = useState<string | null>(null)
@@ -613,6 +618,7 @@ function FriendGraphInner({
         highlightPersonId: highlightId,
         communityColors: communityColorMap,
         selfNodeId,
+        aiImportGlowIds: aiGlowNodeIds,
       }),
     [
       locations,
@@ -622,6 +628,7 @@ function FriendGraphInner({
       highlightId,
       communityColorMap,
       selfNodeId,
+      aiGlowNodeIds,
     ]
   )
 
@@ -944,8 +951,29 @@ function FriendGraphInner({
   }, [shiftHeld, setNodes])
 
   useEffect(() => {
+    if (!showHelp) {
+      setHelpModalEntered(false)
+      return
+    }
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setHelpModalEntered(true))
+    })
+    return () => cancelAnimationFrame(id)
+  }, [showHelp])
+
+  useEffect(() => {
+    return () => {
+      if (aiGlowClearRef.current != null) {
+        clearTimeout(aiGlowClearRef.current)
+        aiGlowClearRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setShowHelp(false)
         setAssignCommunityId(null)
         setNodeContextMenu(null)
         setBulkMenuOpen(null)
@@ -1819,11 +1847,27 @@ function FriendGraphInner({
         return
       }
 
-      const { error } = await supabase.from('nodes').insert(rows)
+      const { data: inserted, error } = await supabase
+        .from('nodes')
+        .insert(rows)
+        .select('id')
       if (error) {
         showToast(error.message || 'Failed to import people.', 'error')
         return
       }
+
+      const newIds = (inserted ?? [])
+        .map((r: { id: string }) => String(r.id))
+        .filter(Boolean)
+      if (aiGlowClearRef.current != null) {
+        clearTimeout(aiGlowClearRef.current)
+        aiGlowClearRef.current = null
+      }
+      setAiGlowNodeIds(newIds)
+      aiGlowClearRef.current = setTimeout(() => {
+        setAiGlowNodeIds([])
+        aiGlowClearRef.current = null
+      }, 10_000)
 
       await loadData()
       showToast(`${rows.length} people added ✓`, 'success')
@@ -3019,12 +3063,217 @@ function FriendGraphInner({
         </button>
         <button
           type="button"
+          onClick={() => setShowHelp(true)}
+          className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+          title="Help & Tutorial"
+        >
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded-full border border-current text-xs font-bold leading-none"
+            aria-hidden
+          >
+            ?
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={() => void loadData()}
           className="rounded-full border border-zinc-300 bg-background px-4 py-3 text-sm font-medium shadow dark:border-zinc-600"
         >
           Refresh
         </button>
       </div>
+
+      {showHelp ? (
+        <div
+          role="presentation"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowHelp(false)
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="starmap-help-title"
+            className={[
+              'relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-2xl',
+              'border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900',
+              'transition-all duration-200 ease-out',
+              helpModalEntered
+                ? 'translate-y-0 scale-100 opacity-100'
+                : 'translate-y-2 scale-95 opacity-0',
+            ].join(' ')}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-4 top-4 text-xl leading-none text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
+              onClick={() => setShowHelp(false)}
+              aria-label="Close help"
+            >
+              ×
+            </button>
+            <div className="p-6">
+              <div className="mb-6 flex items-center gap-2">
+                <span className="text-lg" aria-hidden>
+                  ✦
+                </span>
+                <h2
+                  id="starmap-help-title"
+                  className="text-lg font-semibold text-gray-900 dark:text-white"
+                >
+                  How to use Starmap
+                </h2>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  🧑‍🤝‍🧑
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Adding People
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Click &apos;+ Add Person&apos; to create a node for anyone in your life.
+                    Give them a name, then click their node to fill in their profile — birthdays,
+                    allergies, favourite things, how you met, and more.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  🔗
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Adding Connections
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Click &apos;+ Add Connection&apos; to draw a line between any two people.
+                    Assign relationship tags like Friend, Colleague, or Family, and add an optional
+                    note about the connection.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  ✦
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Communities
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Create communities in the left panel (e.g. Work, Family, Close Friends). Use the
+                    pencil icon to enter assign mode, then click nodes to add them. Click a
+                    community name to watch its constellation light up across your graph.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  📍
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Locations
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Add a location to any person&apos;s profile in their side panel. People in the
+                    same location are automatically connected by soft constellation lines so you can
+                    see where everyone is.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  🖱
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Navigating the Graph
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Drag nodes to rearrange your map — positions are saved automatically. Scroll to
+                    zoom in and out. Click any node to open their profile. Click any connection line
+                    to view or edit the relationship.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  ⇧
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Shift + Click (Multi-Select)
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Hold Shift and click multiple nodes to select them all at once. A toolbar will
+                    appear letting you add them all to a community, set a shared location, or connect
+                    them with a relationship type in one action.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  🤖
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Import with AI
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Use the Import with AI button to quickly add people by describing them in natural
+                    language. The AI will fill in their profile fields automatically.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  👁
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    List View
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Switch to List View using the toggle in the toolbar to see all your people in a
+                    searchable, sortable list. Click any row to open and edit their profile.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-5 flex gap-3">
+                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+                  🔗
+                </span>
+                <div>
+                  <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
+                    Sharing Your Graph
+                  </h3>
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                    Go to your Profile page to get a shareable link to your public graph. Toggle it
+                    private anytime from the same page.
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-6 border-t border-gray-100 pt-4 text-center text-xs text-gray-400 dark:border-gray-800 dark:text-gray-600">
+                More features are always being added to Starmap ✦
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {importAiOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">

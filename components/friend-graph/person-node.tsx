@@ -22,6 +22,8 @@ export type PersonNodeData = {
   multiSelected?: boolean
   /** Node is the one open in the side panel (RF selection may be off). */
   selectedInPanel?: boolean
+  /** Recently added via Import with AI — temporary glow on the graph. */
+  aiImportGlow?: boolean
 }
 
 function initials(name: string): string {
@@ -82,6 +84,17 @@ export function PersonNode({
       }}
       title={data.name}
     >
+      {data.aiImportGlow ? (
+        <div
+          className={[
+            'pointer-events-none absolute rounded-full border-2 border-violet-400/85',
+            'shadow-[0_0_26px_10px_rgba(167,139,250,0.55),0_0_0_3px_rgba(196,181,253,0.45)]',
+            'animate-pulse',
+            isSelf ? 'inset-[-12px]' : 'inset-[-8px]',
+          ].join(' ')}
+          aria-hidden
+        />
+      ) : null}
       {multiSelected ? (
         <div
           className="pointer-events-none absolute inset-[-5px] rounded-full border-[1.5px] border-dashed border-white/90"
