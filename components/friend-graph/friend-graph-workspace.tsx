@@ -3114,8 +3114,11 @@ function FriendGraphInner({
               ×
             </button>
             <div className="p-6">
-              <div className="mb-6 flex items-center gap-2">
-                <span className="text-lg" aria-hidden>
+              <div className="mb-6 grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-3">
+                <span
+                  className="flex justify-center text-lg leading-none"
+                  aria-hidden
+                >
                   ✦
                 </span>
                 <h2
@@ -3126,11 +3129,14 @@ function FriendGraphInner({
                 </h2>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   🧑‍🤝‍🧑
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     Adding People
                   </h3>
@@ -3142,11 +3148,14 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   🔗
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     Adding Connections
                   </h3>
@@ -3158,27 +3167,32 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   ✦
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
-                    Communities
+                    Constellations
                   </h3>
-                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-                    Create communities in the left panel (e.g. Work, Family, Close Friends). Use the
+                  <p className="text-sm leading-relaxed text-gray-500 dark:text-gray-400">Create constellations in the left panel (e.g. Work, Family, Close Friends). Use the
                     pencil icon to enter assign mode, then click nodes to add them. Click a
-                    community name to watch its constellation light up across your graph.
+                    name to watch its constellation light up across your graph.
                   </p>
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   📍
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     Locations
                   </h3>
@@ -3190,11 +3204,14 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   🖱
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     Navigating the Graph
                   </h3>
@@ -3206,11 +3223,14 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   ⇧
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     Shift + Click (Multi-Select)
                   </h3>
@@ -3222,11 +3242,14 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   🤖
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     Import with AI
                   </h3>
@@ -3237,11 +3260,14 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   👁
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     List View
                   </h3>
@@ -3252,11 +3278,14 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <div className="mb-5 flex gap-3">
-                <span className="mt-0.5 flex-shrink-0 text-xl" aria-hidden>
+              <div className="mb-5 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
+                <span
+                  className="flex shrink-0 items-start justify-center pt-0.5 text-xl leading-none"
+                  aria-hidden
+                >
                   🔗
                 </span>
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-0.5 text-sm font-semibold text-gray-900 dark:text-white">
                     Sharing Your Graph
                   </h3>
@@ -3267,7 +3296,7 @@ function FriendGraphInner({
                 </div>
               </div>
 
-              <p className="mt-6 border-t border-gray-100 pt-4 text-center text-xs text-gray-400 dark:border-gray-800 dark:text-gray-600">
+              <p className="mt-6 border-t border-gray-100 pt-4 text-left text-xs text-gray-400 dark:border-gray-800 dark:text-gray-600">
                 More features are always being added to Starmap ✦
               </p>
             </div>
