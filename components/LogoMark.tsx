@@ -9,7 +9,7 @@ export function LogoMark({ textClassName }: LogoMarkProps) {
   return (
     <Link
       href="/"
-      className="inline-flex shrink-0 items-center text-foreground hover:opacity-80"
+      className="inline-flex min-w-0 shrink-0 items-center text-gray-900 hover:opacity-80 dark:text-white"
     >
       <span
         style={{ fontFamily: 'Sohne' }}

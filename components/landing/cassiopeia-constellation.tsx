@@ -1,5 +1,13 @@
 'use client'
 
+const TW = [
+  'landing-node-twinkle-a',
+  'landing-node-twinkle-b',
+  'landing-node-twinkle-c',
+  'landing-node-twinkle-d',
+  'landing-node-twinkle-e',
+] as const
+
 type CassiopeiaConfig = {
   viewBox: string
   nodes: readonly {
@@ -7,8 +15,10 @@ type CassiopeiaConfig = {
     x: number
     y: number
     label: string
-    color: string
-    delay: string
+    /** Main disc fill (light mode) */
+    fill: string
+    /** Main disc fill (dark mode) */
+    darkFill: string
     you?: boolean
   }[]
   lines: readonly (readonly [number, number, number, number])[]
@@ -17,11 +27,11 @@ type CassiopeiaConfig = {
 const DESKTOP: CassiopeiaConfig = {
   viewBox: '0 0 400 120',
   nodes: [
-    { id: 'A', x: 30, y: 20, label: 'Maya', color: '#A78BFA', delay: '0s' },
-    { id: 'B', x: 120, y: 90, label: 'Jordan', color: '#FB7185', delay: '0.4s' },
-    { id: 'C', x: 200, y: 30, label: 'You', color: '#ffffff', delay: '0.8s', you: true },
-    { id: 'D', x: 280, y: 90, label: 'Priya', color: '#34D399', delay: '1.2s' },
-    { id: 'E', x: 370, y: 20, label: 'Sam', color: '#A78BFA', delay: '1.6s' },
+    { id: 'A', x: 30, y: 20, label: 'Maya', fill: '#a78bfa', darkFill: '#c4b5fd' },
+    { id: 'B', x: 120, y: 90, label: 'Jordan', fill: '#f472b6', darkFill: '#fbcfe8' },
+    { id: 'C', x: 200, y: 30, label: 'You', fill: '#7c3aed', darkFill: '#ddd6fe', you: true },
+    { id: 'D', x: 280, y: 90, label: 'Priya', fill: '#34d399', darkFill: '#a7f3d0' },
+    { id: 'E', x: 370, y: 20, label: 'Sam', fill: '#8b5cf6', darkFill: '#ddd6fe' },
   ],
   lines: [
     [30, 20, 120, 90],
@@ -34,11 +44,11 @@ const DESKTOP: CassiopeiaConfig = {
 const MOBILE: CassiopeiaConfig = {
   viewBox: '0 0 120 400',
   nodes: [
-    { id: 'A', x: 60, y: 30, label: 'Maya', color: '#A78BFA', delay: '0s' },
-    { id: 'B', x: 10, y: 100, label: 'Jordan', color: '#FB7185', delay: '0.4s' },
-    { id: 'C', x: 100, y: 170, label: 'You', color: '#ffffff', delay: '0.8s', you: true },
-    { id: 'D', x: 10, y: 240, label: 'Priya', color: '#34D399', delay: '1.2s' },
-    { id: 'E', x: 100, y: 310, label: 'Sam', color: '#A78BFA', delay: '1.6s' },
+    { id: 'A', x: 60, y: 30, label: 'Maya', fill: '#a78bfa', darkFill: '#c4b5fd' },
+    { id: 'B', x: 10, y: 100, label: 'Jordan', fill: '#f472b6', darkFill: '#fbcfe8' },
+    { id: 'C', x: 100, y: 170, label: 'You', fill: '#7c3aed', darkFill: '#ddd6fe', you: true },
+    { id: 'D', x: 10, y: 240, label: 'Priya', fill: '#34d399', darkFill: '#a7f3d0' },
+    { id: 'E', x: 100, y: 310, label: 'Sam', fill: '#8b5cf6', darkFill: '#ddd6fe' },
   ],
   lines: [
     [60, 30, 10, 100],
@@ -51,18 +61,34 @@ const MOBILE: CassiopeiaConfig = {
 function ConstellationSvg({
   config,
   className,
+  idSuffix,
 }: {
   config: CassiopeiaConfig
   className?: string
+  idSuffix: string
 }) {
+  const glowId = `cassiopeia-twinkle-glow${idSuffix}`
+  const glowDarkId = `cassiopeia-twinkle-glow-dark${idSuffix}`
+
   return (
-    <svg
-      className={className}
-      viewBox={config.viewBox}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-    >
+    <svg className={className} viewBox={config.viewBox} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <defs>
+        <filter id={glowId} x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="6" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id={glowDarkId} x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="10" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+
       {config.lines.map(([x1, y1, x2, y2], i) => (
         <line
           key={`ln-${i}`}
@@ -70,51 +96,72 @@ function ConstellationSvg({
           y1={y1}
           x2={x2}
           y2={y2}
-          strokeWidth={1}
           strokeDasharray="4 4"
-          className="animate-dash-flow [stroke:rgba(109,40,217,0.4)] dark:[stroke:rgba(167,139,250,0.3)]"
+          className="feature-mini-constellation-line constellation-line-breathe"
         />
       ))}
-      {config.nodes.map((n) => (
-        <g key={n.id}>
-          <circle
-            cx={n.x}
-            cy={n.y}
-            r={n.you ? 10 : 8}
-            fill={n.you ? undefined : n.color}
-            className={`animate-node-pulse ${n.you ? 'fill-violet-600 dark:fill-white' : ''}`}
-            style={{
-              animationDelay: n.delay,
-              filter: n.you
-                ? 'drop-shadow(0 0 10px rgba(124,58,237,0.45))'
-                : `drop-shadow(0 0 8px ${n.color})`,
-            }}
-            stroke={n.you ? 'rgba(124,58,237,0.55)' : 'none'}
-            strokeWidth={n.you ? 2 : 0}
-          />
-          <text
-            x={n.x}
-            y={n.y + (n.you ? 22 : 20)}
-            textAnchor="middle"
-            className="fill-gray-500 text-[10px] dark:fill-white/60"
-            style={{ fontFamily: 'Inter, sans-serif' }}
-          >
-            {n.label}
-          </text>
-        </g>
-      ))}
+
+      {config.nodes.map((n, i) => {
+        const r = n.you ? 6.5 : 5.5
+        const tw = TW[i % 5]!
+        const labelY = n.you ? 19 : 17
+
+        return (
+          <g key={n.id}>
+            <g transform={`translate(${n.x} ${n.y})`}>
+              <g className={tw}>
+              {n.you ? (
+                <>
+                  <circle
+                    r={r}
+                    className="fill-violet-600 dark:hidden"
+                    stroke="rgba(124,58,237,0.55)"
+                    strokeWidth={2}
+                    filter={`url(#${glowId})`}
+                  />
+                  <circle
+                    r={r}
+                    className="hidden dark:block fill-white"
+                    stroke="rgba(124,58,237,0.55)"
+                    strokeWidth={2}
+                    filter={`url(#${glowDarkId})`}
+                  />
+                  <circle r={r * 0.3} className="fill-white/35 dark:hidden" />
+                  <circle r={r * 0.3} className="hidden fill-violet-600/25 dark:block" />
+                </>
+              ) : (
+                <>
+                  <circle r={r} fill={n.fill} className="dark:hidden" filter={`url(#${glowId})`} />
+                  <circle r={r} fill={n.darkFill} className="hidden dark:block" filter={`url(#${glowDarkId})`} />
+                  <circle r={r * 0.3} fill="rgba(255,255,255,0.35)" />
+                </>
+              )}
+              </g>
+            </g>
+            <text
+              x={n.x}
+              y={n.y + labelY}
+              textAnchor="middle"
+              className="fill-gray-600 text-[10px] dark:fill-white/85"
+              style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+            >
+              {n.label}
+            </text>
+          </g>
+        )
+      })}
     </svg>
   )
 }
 
 export function CassiopeiaConstellation() {
   return (
-    <div className="mt-10 flex w-full justify-center px-2">
+    <div className="mt-10 flex w-full min-w-0 justify-center px-2 sm:px-4">
       <div className="hidden w-full max-w-[400px] md:block">
-        <ConstellationSvg config={DESKTOP} className="h-auto w-full" />
+        <ConstellationSvg config={DESKTOP} className="h-auto w-full" idSuffix="-desk" />
       </div>
       <div className="flex max-h-[min(400px,55vh)] w-[120px] justify-center md:hidden">
-        <ConstellationSvg config={MOBILE} className="h-full w-full" />
+        <ConstellationSvg config={MOBILE} className="h-full w-full" idSuffix="-mob" />
       </div>
     </div>
   )

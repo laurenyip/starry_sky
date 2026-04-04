@@ -42,7 +42,7 @@ export function ThemeToggle() {
       type="button"
       onClick={toggle}
       aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-      className="shrink-0 rounded-full p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+      className="shrink-0 rounded-full p-2 text-gray-900 transition-colors hover:bg-gray-100 dark:text-white dark:hover:bg-white/10"
     >
       <span className="text-base leading-none" aria-hidden>
         {dark ? '☀' : '☽'}
