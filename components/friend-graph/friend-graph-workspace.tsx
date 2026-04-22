@@ -108,6 +108,7 @@ function formatSupabaseSchemaError(messages: string[]): string {
     /pos_x/i.test(joined) ||
     /is_self/i.test(joined)
   const missingV8 = /node-avatars/i.test(joined)
+  const missingV9 = /remember_history/i.test(joined)
   if (
     missingTable ||
     missingColumn ||
@@ -115,7 +116,8 @@ function formatSupabaseSchemaError(messages: string[]): string {
     missingV5 ||
     missingV6 ||
     missingV7 ||
-    missingV8
+    missingV8 ||
+    missingV9
   ) {
     return [
       'Database schema is out of date: run the SQL in your Supabase project (SQL Editor):',
@@ -131,6 +133,13 @@ function formatSupabaseSchemaError(messages: string[]): string {
     ].join('\n')
   }
   return joined
+}
+
+function isRememberHistoryMissingError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = String((error as { code?: unknown }).code ?? '')
+  const message = String((error as { message?: unknown }).message ?? '')
+  return code === 'PGRST205' || /remember_history/i.test(message)
 }
 
 function useShiftHeld() {
@@ -1337,6 +1346,10 @@ function FriendGraphInner({
         .eq('node_id', nodeId)
         .order('saved_at', { ascending: false })
       if (error) {
+        if (isRememberHistoryMissingError(error)) {
+          setRememberHistory([])
+          return
+        }
         setRememberHistory([])
         return
       }
@@ -1415,7 +1428,7 @@ function FriendGraphInner({
       content: nextContent,
       saved_at: new Date().toISOString(),
     })
-    if (herr) {
+    if (herr && !isRememberHistoryMissingError(herr)) {
       markSaveFail(herr.message || 'Failed to save')
       return
     }
@@ -2333,12 +2346,15 @@ function FriendGraphInner({
           throw uerr
         }
         if (panelNotes !== selectedPerson.things_to_remember) {
-          await supabase.from('remember_history').insert({
+          const { error: rememberErr } = await supabase.from('remember_history').insert({
             owner_id: userId,
             node_id: selectedPerson.id,
             content: panelNotes,
             saved_at: new Date().toISOString(),
           })
+          if (rememberErr && !isRememberHistoryMissingError(rememberErr)) {
+            throw rememberErr
+          }
         }
         if (!selectedPerson.is_self) {
           await saveRelationTagsToUser(panelRelationTags)
