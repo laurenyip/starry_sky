@@ -91,6 +91,23 @@ export function DateAttributeField({ attrKey, value, onChange, onBlurPersist }: 
 
   const c = canonicalDate(value)
   const ymd = c.canonical
+  const birthdayGoogleCalendarUrl =
+    kind === 'birthday' && ymd
+      ? (() => {
+          const compact = ymd.replace(/-/g, '')
+          const nextDayDate = new Date(`${ymd}T00:00:00Z`)
+          nextDayDate.setUTCDate(nextDayDate.getUTCDate() + 1)
+          const nextDay = nextDayDate.toISOString().slice(0, 10).replace(/-/g, '')
+          const params = new URLSearchParams({
+            action: 'TEMPLATE',
+            text: 'Birthday Reminder',
+            dates: `${compact}/${nextDay}`,
+            recur: 'RRULE:FREQ=YEARLY',
+            details: 'Birthday reminder from Starmap.',
+          })
+          return `https://calendar.google.com/calendar/render?${params.toString()}`
+        })()
+      : null
 
   let meta: ReactNode = null
 
@@ -167,6 +184,16 @@ export function DateAttributeField({ attrKey, value, onChange, onBlurPersist }: 
         onBlur={onBlurPersist}
       />
       {meta}
+      {birthdayGoogleCalendarUrl ? (
+        <a
+          href={birthdayGoogleCalendarUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-1 inline-block text-xs text-blue-500 hover:underline"
+        >
+          Add yearly reminder to Google Calendar
+        </a>
+      ) : null}
     </>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { useDashboardHelpBridge } from '@/components/dashboard-help-bridge'
 import { useToast } from '@/components/toast-provider'
 import { SmartAttributeField } from '@/components/friend-graph/smart-attribute-field'
 import { CommunityConnectOverlay } from '@/components/friend-graph/community-connect-overlay'
@@ -59,6 +60,7 @@ import {
   type Connection,
   type Edge,
   type Node,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import Papa from 'papaparse'
 import * as mammoth from 'mammoth'
@@ -188,22 +190,37 @@ const RELATION_TYPES = [
   'Enemy',
   'Other',
 ] as const
+const CUSTOM_ATTRIBUTE_SUGGESTED_KEYS = [
+  'Birthday',
+  'Anniversary',
+  'How we met',
+  'Phone',
+  'Email',
+  'Allergies',
+  'Favourite things',
+  'Gift ideas',
+] as const
 function legacyTagToRelationTypeLegacyField(tag: string | null): string | null {
   if (!tag) return null
   return tag.trim().toLowerCase().replace(/\s+/g, '_')
 }
 
 function normalizeRelationTags(tags: string[]): string[] {
-  const allowed = new Set<string>(RELATION_TYPES as unknown as string[])
   const cleaned = tags
     .map((t) => String(t).trim())
     .filter(Boolean)
-    .filter((t) => allowed.has(t))
   const uniq = Array.from(new Set(cleaned))
   const order = new Map<string, number>(
     (RELATION_TYPES as unknown as string[]).map((t, i) => [t, i])
   )
-  uniq.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999))
+  uniq.sort((a, b) => {
+    const oa = order.get(a)
+    const ob = order.get(b)
+    if (oa != null && ob != null) return oa - ob
+    if (oa != null) return -1
+    if (ob != null) return 1
+    return a.localeCompare(b, undefined, { sensitivity: 'base' })
+  })
   return uniq
 }
 
@@ -222,6 +239,12 @@ function legacyRelationTypeToTags(rt: string | null | undefined): string[] {
   if (t === 'enemy') return ['Enemy']
   if (t === 'other') return ['Other']
   return ['Other']
+}
+
+function appendCustomRelationTag(tags: string[], rawTag: string): string[] {
+  const next = rawTag.trim().replace(/\s+/g, ' ')
+  if (!next) return normalizeRelationTags(tags)
+  return normalizeRelationTags([...tags, next])
 }
 
 function relationTagPillClass(tag: string): string {
@@ -342,6 +365,7 @@ function FriendGraphInner({
   >(null)
   const [bulkLocName, setBulkLocName] = useState('')
   const [bulkConnectTags, setBulkConnectTags] = useState<string[]>([])
+  const [bulkCustomRelationTag, setBulkCustomRelationTag] = useState('')
   const [bulkActionBusy, setBulkActionBusy] = useState(false)
 
   const [communities, setCommunities] = useState<
@@ -368,12 +392,14 @@ function FriendGraphInner({
   const [connectPersonAId, setConnectPersonAId] = useState('')
   const [connectPersonBId, setConnectPersonBId] = useState('')
   const [connectRelationTags, setConnectRelationTags] = useState<string[]>([])
+  const [connectCustomRelationTag, setConnectCustomRelationTag] = useState('')
   const [connectCommunityId, setConnectCommunityId] = useState<string | null>(null)
   const [connectNote, setConnectNote] = useState('')
   const [connectErr, setConnectErr] = useState<string | null>(null)
 
   const [showHelp, setShowHelp] = useState(false)
   const [helpModalEntered, setHelpModalEntered] = useState(false)
+  const dashboardHelpBridge = useDashboardHelpBridge()
   const [aiGlowNodeIds, setAiGlowNodeIds] = useState<string[]>([])
   const aiGlowClearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -395,6 +421,7 @@ function FriendGraphInner({
   >([])
   const [panelCommunityPicker, setPanelCommunityPicker] = useState('')
   const [pendingRelationTags, setPendingRelationTags] = useState<string[]>([])
+  const [pendingCustomRelationTag, setPendingCustomRelationTag] = useState('')
   const [pendingCommunityId, setPendingCommunityId] = useState<string | null>(null)
   const [pendingLabelNote, setPendingLabelNote] = useState('')
 
@@ -426,6 +453,7 @@ function FriendGraphInner({
 
   const [panelLocId, setPanelLocId] = useState('')
   const [panelLocName, setPanelLocName] = useState('')
+  const [panelLocMenuOpen, setPanelLocMenuOpen] = useState(false)
   const [panelNotes, setPanelNotes] = useState('')
   const [panelRows, setPanelRows] = useState<{ key: string; value: string }[]>(
     [{ key: '', value: '' }]
@@ -441,6 +469,7 @@ function FriendGraphInner({
   const [panelName, setPanelName] = useState('')
   const [creatingDraftNode, setCreatingDraftNode] = useState(false)
   const [panelRelationTags, setPanelRelationTags] = useState<string[]>([])
+  const [panelCustomRelationTag, setPanelCustomRelationTag] = useState('')
   const [panelRelationNote, setPanelRelationNote] = useState('')
   const [relationHistory, setRelationHistory] = useState<
     {
@@ -472,6 +501,10 @@ function FriendGraphInner({
   const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const panelRowsRef = useRef(panelRows)
   panelRowsRef.current = panelRows
+  const panelRelationTagsRef = useRef(panelRelationTags)
+  panelRelationTagsRef.current = panelRelationTags
+  const panelRelationNoteRef = useRef(panelRelationNote)
+  panelRelationNoteRef.current = panelRelationNote
   const shiftRef = useRef(shiftHeld)
   shiftRef.current = shiftHeld
 
@@ -583,6 +616,22 @@ function FriendGraphInner({
     () => communities.filter((c) => !selectedNodeCommunityIds.includes(c.id)),
     [communities, selectedNodeCommunityIds]
   )
+  const locationSuggestions = useMemo(() => {
+    const seen = new Set<string>()
+    const all = locations
+      .map((l) => l.name.trim())
+      .filter((name) => name.length > 0)
+      .filter((name) => {
+        const key = name.toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    const q = panelLocName.trim().toLowerCase()
+    if (!q) return all
+    return all.filter((name) => name.toLowerCase().includes(q))
+  }, [locations, panelLocName])
 
   const panelDedupedConnections = useMemo(
     () =>
@@ -843,6 +892,10 @@ function FriendGraphInner({
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nodesForFlow)
   const [edges, setEdges, onEdgesChange] = useEdgesState(styledEdges)
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null)
+  const lastPanelCenteredNodeId = useRef<string | null>(null)
+  /** Last person chosen from graph or list (non–shift-click); used as default Person A in Add connection. */
+  const lastGraphClickedPersonIdRef = useRef<string>('')
 
   const selectPersonFromList = useCallback(
     (person: DbPerson) => {
@@ -856,6 +909,7 @@ function FriendGraphInner({
       setSelectedNodeIds(new Set())
       setGraphHighlight({ kind: 'node', nodeId: person.id })
       setSelectedPerson(person)
+      lastGraphClickedPersonIdRef.current = person.id
     },
     [setEdges]
   )
@@ -925,6 +979,8 @@ function FriendGraphInner({
                   shiftConnect: sh,
                   multiSelected: selectedNodeIds.has(n.id),
                   selectedInPanel: selectedPerson?.id === n.id,
+                  panelFocused:
+                    selectedPerson?.id === n.id && selectedPerson?.is_self !== true,
                 },
               }
             : n
@@ -949,6 +1005,25 @@ function FriendGraphInner({
   ])
 
   useEffect(() => {
+    const targetId = selectedPerson?.id ?? null
+    if (!targetId) {
+      lastPanelCenteredNodeId.current = null
+      return
+    }
+    if (view !== 'graph' || !flowInstance) return
+    if (lastPanelCenteredNodeId.current === targetId) return
+    const targetNode = nodes.find((n) => n.id === targetId && n.type === 'person')
+    if (!targetNode) return
+    const d = (targetNode.data ?? {}) as Record<string, unknown>
+    const radius = d.isSelf === true ? 42 : 26
+    const centerX = targetNode.position.x + radius
+    const centerY = targetNode.position.y + radius
+    const zoom = Math.max(flowInstance.getZoom(), 0.95)
+    flowInstance.setCenter(centerX, centerY, { zoom, duration: 520 })
+    lastPanelCenteredNodeId.current = targetId
+  }, [selectedPerson?.id, view, flowInstance, nodes])
+
+  useEffect(() => {
     setNodes((nds) =>
       nds.map((n) => {
         if (n.type !== 'person') return n
@@ -969,6 +1044,12 @@ function FriendGraphInner({
     })
     return () => cancelAnimationFrame(id)
   }, [showHelp])
+
+  useEffect(() => {
+    if (!dashboardHelpBridge) return
+    dashboardHelpBridge.registerOpenHelp(() => setShowHelp(true))
+    return () => dashboardHelpBridge.registerOpenHelp(null)
+  }, [dashboardHelpBridge])
 
   useEffect(() => {
     return () => {
@@ -1238,6 +1319,7 @@ function FriendGraphInner({
       setPanelNotes('')
       setPanelRows([{ key: '', value: '' }])
       setPanelRelationTags([])
+      setPanelCustomRelationTag('')
       setPanelRelationNote('')
       setPanelName('')
       return
@@ -1255,6 +1337,7 @@ function FriendGraphInner({
     setPanelCommunityPicker('')
     if (selectedPerson.is_self) {
       setPanelRelationTags([])
+      setPanelCustomRelationTag('')
       setPanelRelationNote('')
     }
   }, [selectedPerson, locations])
@@ -1302,6 +1385,9 @@ function FriendGraphInner({
 
   useEffect(() => {
     setPanelRelationNote('')
+  }, [selectedPerson?.id])
+  useEffect(() => {
+    setPanelCustomRelationTag('')
   }, [selectedPerson?.id])
 
   useEffect(() => {
@@ -1489,6 +1575,7 @@ function FriendGraphInner({
   const saveRelationTagsToUser = useCallback(
     async (nextTagsRaw: string[]) => {
       if (!selectedPerson || selectedPerson.is_self) return
+      if (selectedPerson.id.startsWith('__draft__')) return
       const selfRow = people.find((p) => p.is_self)
       const sid = selfRow?.id
       if (!sid) return
@@ -1661,6 +1748,7 @@ function FriendGraphInner({
     setConnectPersonAId('')
     setConnectPersonBId('')
     setConnectRelationTags([])
+    setConnectCustomRelationTag('')
     setConnectCommunityId(null)
     setConnectNote('')
     await loadData()
@@ -1678,6 +1766,36 @@ function FriendGraphInner({
     loadData,
     showToast,
   ])
+
+  /** `pair` = two explicit endpoints; omit to use last single-clicked node as A and leave B empty. */
+  const openAddConnectionModal = useCallback(
+    (pair?: readonly [string, string]) => {
+      if (people.length < 2) {
+        showToast('Add at least two people before creating a connection.', 'error')
+        return
+      }
+      setConnectErr(null)
+      setBulkMenuOpen(null)
+      if (pair) {
+        const [a, b] = pair
+        if (!a || !b || a === b) return
+        setConnectPersonAId(a)
+        setConnectPersonBId(b)
+      } else {
+        const last = lastGraphClickedPersonIdRef.current
+        const validLast =
+          last && people.some((p) => p.id === last) ? last : ''
+        setConnectPersonAId(validLast)
+        setConnectPersonBId('')
+      }
+      setConnectRelationTags([])
+      setConnectCustomRelationTag('')
+      setConnectCommunityId(null)
+      setConnectNote('')
+      setAddConnectionOpen(true)
+    },
+    [people.length, showToast]
+  )
 
   const resetImportAi = useCallback(() => {
     setImportAiText('')
@@ -2052,9 +2170,9 @@ function FriendGraphInner({
     [supabase, userId, loadData]
   )
 
-  const handlePanelLocationBlur = useCallback(async () => {
+  const commitPanelLocation = useCallback(async (nextRawName?: string) => {
     if (!selectedPerson || selectedPerson.id.startsWith('__draft__')) return
-    const nextLocName = panelLocName.trim()
+    const nextLocName = (nextRawName ?? panelLocName).trim()
     let locId: string | null = selectedPerson.location_id
     if (nextLocName) {
       const existing = locations.find(
@@ -2068,6 +2186,11 @@ function FriendGraphInner({
     if (locId === selectedPerson.location_id) return
     await saveNodeField('location_id', locId)
   }, [selectedPerson, panelLocName, locations, addLocation, saveNodeField])
+
+  const handlePanelLocationBlur = useCallback(() => {
+    setPanelLocMenuOpen(false)
+    void commitPanelLocation()
+  }, [commitPanelLocation])
 
   const bulkAddNodesToCommunity = useCallback(
     async (communityId: string) => {
@@ -2244,6 +2367,7 @@ function FriendGraphInner({
     setSelectedNodeIds(new Set())
     setBulkMenuOpen(null)
     setBulkConnectTags([])
+    setBulkCustomRelationTag('')
   }, [
     bulkConnectTags,
     selectedNodeIds,
@@ -2332,7 +2456,55 @@ function FriendGraphInner({
         }
         setNodes((prev) => [...prev])
         setCreatingDraftNode(false)
-        setHighlightId(String((inserted as any).id))
+        const insertedId = String((inserted as any).id ?? '')
+        setHighlightId(insertedId)
+        const relationTagsForInsert = normalizeRelationTags(panelRelationTagsRef.current)
+        if (insertedId && relationTagsForInsert.length > 0) {
+          const selfRow = people.find((p) => p.is_self)
+          const selfId = selfRow?.id
+          if (selfId) {
+            const legacyNorm = legacyTagToRelationTypeLegacyField(
+              relationTagsForInsert[0] ?? null
+            )
+            const { error: relInsErr } = await supabase.from('edges').insert([
+              {
+                owner_id: userId,
+                source_node_id: selfId,
+                target_node_id: insertedId,
+                label: 'connected',
+                community_id: null,
+                relation_type: legacyNorm,
+                relation_types: relationTagsForInsert,
+              },
+              {
+                owner_id: userId,
+                source_node_id: insertedId,
+                target_node_id: selfId,
+                label: 'connected',
+                community_id: null,
+                relation_type: legacyNorm,
+                relation_types: relationTagsForInsert,
+              },
+            ])
+            if (relInsErr) {
+              showToast(relInsErr.message || 'Failed to save relationship tags.', 'error')
+              throw relInsErr
+            }
+            const noteTrim = panelRelationNoteRef.current.trim()
+            const { error: relHistErr } = await supabase.from('relation_history').insert({
+              owner_id: userId,
+              node_id: insertedId,
+              previous_relation: null,
+              new_relation: relationTagsForInsert.join(', '),
+              note: noteTrim.length ? noteTrim : null,
+            })
+            if (relHistErr) {
+              showToast(relHistErr.message || 'Failed to save relationship history.', 'error')
+              throw relHistErr
+            }
+            setPanelRelationNote('')
+          }
+        }
         await loadData()
         showToast('Node saved ✓', 'success')
       } else {
@@ -2430,6 +2602,7 @@ function FriendGraphInner({
     setPendingConn(null)
     setPendingCommunityId(null)
     setPendingRelationTags([])
+    setPendingCustomRelationTag('')
     setPendingLabelNote('')
     await loadData()
   }, [
@@ -2724,6 +2897,7 @@ function FriendGraphInner({
           setEdges((eds) => eds.map((edge) => ({ ...edge, selected: false })))
           setSelectedEdge(null)
           if (n.type === 'person') {
+            lastGraphClickedPersonIdRef.current = n.id
             setGraphHighlight({ kind: 'node', nodeId: n.id })
             const row = people.find((p) => p.id === n.id)
             if (row) setSelectedPerson(row)
@@ -2755,6 +2929,7 @@ function FriendGraphInner({
           setSelectedCommunityId(key)
           setGraphHighlight({ kind: 'none' })
         }}
+        onInit={setFlowInstance}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={(ev, n) => {
           ev.preventDefault()
@@ -2891,6 +3066,35 @@ function FriendGraphInner({
                       )
                     })}
                   </div>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={bulkCustomRelationTag}
+                      onChange={(e) => setBulkCustomRelationTag(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return
+                        e.preventDefault()
+                        setBulkConnectTags((prev) =>
+                          appendCustomRelationTag(prev, bulkCustomRelationTag)
+                        )
+                        setBulkCustomRelationTag('')
+                      }}
+                      placeholder="Add custom tag"
+                      className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 outline-none dark:border-zinc-600 dark:bg-zinc-950 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600"
+                      onClick={() => {
+                        setBulkConnectTags((prev) =>
+                          appendCustomRelationTag(prev, bulkCustomRelationTag)
+                        )
+                        setBulkCustomRelationTag('')
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
                   <button
                     type="button"
                     disabled={bulkActionBusy || bulkConnectTags.length === 0}
@@ -2930,6 +3134,24 @@ function FriendGraphInner({
                 <span aria-hidden>📍</span>
                 Set location
               </button>
+              {selectedNodeIds.size === 2 ? (
+                <button
+                  type="button"
+                  disabled={bulkActionBusy}
+                  onClick={() => {
+                    const ids = [...selectedNodeIds]
+                    if (ids.length !== 2) return
+                    openAddConnectionModal([ids[0]!, ids[1]!])
+                    setSelectedNodeIds(new Set())
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50 dark:hover:bg-black/10"
+                >
+                  <span className="text-xs opacity-80" aria-hidden>
+                    ━
+                  </span>
+                  Add connection
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={bulkActionBusy}
@@ -3049,21 +3271,7 @@ function FriendGraphInner({
         </button>
         <button
           type="button"
-          onClick={() => {
-            if (people.length < 2) {
-              showToast('Add at least two people before creating a connection.', 'error')
-              return
-            }
-            setConnectErr(null)
-            const a = people[0]?.id ?? ''
-            const b = people.find((p) => p.id !== a)?.id ?? ''
-            setConnectPersonAId(a)
-            setConnectPersonBId(b)
-                setConnectRelationTags([])
-            setConnectCommunityId(null)
-            setConnectNote('')
-            setAddConnectionOpen(true)
-          }}
+          onClick={() => openAddConnectionModal()}
           className="rounded-full border border-zinc-300 bg-background px-4 py-3 text-sm font-medium shadow dark:border-zinc-600"
         >
           + Add Connection
@@ -3079,19 +3287,6 @@ function FriendGraphInner({
         </button>
         <button
           type="button"
-          onClick={() => setShowHelp(true)}
-          className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-          title="Help & Tutorial"
-        >
-          <span
-            className="flex h-5 w-5 items-center justify-center rounded-full border border-current text-xs font-bold leading-none"
-            aria-hidden
-          >
-            ?
-          </span>
-        </button>
-        <button
-          type="button"
           onClick={() => void loadData()}
           className="rounded-full border border-zinc-300 bg-background px-4 py-3 text-sm font-medium shadow dark:border-zinc-600"
         >
@@ -3102,7 +3297,7 @@ function FriendGraphInner({
       {showHelp ? (
         <div
           role="presentation"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
           onClick={(e) => {
             if (e.target === e.currentTarget) setShowHelp(false)
           }}
@@ -3595,180 +3790,291 @@ function FriendGraphInner({
       ) : null}
 
       {addConnectionOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-background p-6 dark:border-zinc-700">
-            <h3 className="font-semibold">Add connection</h3>
-            {connectErr ? (
-              <p className="mt-2 text-sm text-red-600" role="alert">
-                {connectErr}
-              </p>
-            ) : null}
-            <label className="mt-3 block text-sm font-medium">Person A</label>
-            <select
-              value={connectPersonAId}
-              onChange={(e) => {
-                const nextA = e.target.value
-                setConnectPersonAId(nextA)
-                if (connectPersonBId === nextA) {
-                  const nextB = people.find((p) => p.id !== nextA)?.id ?? ''
-                  setConnectPersonBId(nextB)
-                }
-              }}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            >
-              <option value="">Select person…</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <label className="mt-3 block text-sm font-medium">Person B</label>
-            <select
-              value={connectPersonBId}
-              onChange={(e) => setConnectPersonBId(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            >
-              <option value="">Select person…</option>
-              {people
-                .filter((p) => p.id !== connectPersonAId)
-                .map((p) => (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center sm:p-4"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setAddConnectionOpen(false)
+              setConnectCustomRelationTag('')
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-connection-title"
+            className="flex max-h-[min(92dvh,32rem)] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-background shadow-xl dark:border-zinc-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+              <h3 id="add-connection-title" className="font-semibold">
+                Add connection
+              </h3>
+              {connectErr ? (
+                <p className="mt-1.5 text-sm text-red-600" role="alert">
+                  {connectErr}
+                </p>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+              <label className="block text-sm font-medium">Person A</label>
+              <select
+                value={connectPersonAId}
+                onChange={(e) => {
+                  const nextA = e.target.value
+                  setConnectPersonAId(nextA)
+                  if (connectPersonBId === nextA) {
+                    const nextB = people.find((p) => p.id !== nextA)?.id ?? ''
+                    setConnectPersonBId(nextB)
+                  }
+                }}
+                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
+              >
+                <option value="">Select person…</option>
+                {people.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-            </select>
-            <label className="mt-3 block text-sm font-medium">Relationship types (optional)</label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {(RELATION_TYPES as unknown as string[]).map((tag) => {
-                const selected = connectRelationTags.includes(tag)
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={relationTagPickerClass(selected)}
-                    onClick={() => {
-                      const next = selected
-                        ? connectRelationTags.filter((t) => t !== tag)
-                        : [...connectRelationTags, tag]
-                      setConnectRelationTags(normalizeRelationTags(next))
-                    }}
-                  >
-                    {tag}
-                  </button>
-                )
-              })}
+              </select>
+              <label className="mt-3 block text-sm font-medium">Person B</label>
+              <select
+                value={connectPersonBId}
+                onChange={(e) => setConnectPersonBId(e.target.value)}
+                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
+              >
+                <option value="">Select person…</option>
+                {people
+                  .filter((p) => p.id !== connectPersonAId)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+              <label className="mt-3 block text-sm font-medium">Relationship types (optional)</label>
+              <div className="mt-2 flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+                {(RELATION_TYPES as unknown as string[]).map((tag) => {
+                  const selected = connectRelationTags.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      className={relationTagPickerClass(selected)}
+                      onClick={() => {
+                        const next = selected
+                          ? connectRelationTags.filter((t) => t !== tag)
+                          : [...connectRelationTags, tag]
+                        setConnectRelationTags(normalizeRelationTags(next))
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={connectCustomRelationTag}
+                  onChange={(e) => setConnectCustomRelationTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return
+                    e.preventDefault()
+                    setConnectRelationTags((prev) =>
+                      appendCustomRelationTag(prev, connectCustomRelationTag)
+                    )
+                    setConnectCustomRelationTag('')
+                  }}
+                  placeholder="Add custom tag"
+                  className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600"
+                />
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md border px-2.5 py-1.5 text-xs dark:border-zinc-600"
+                  onClick={() => {
+                    setConnectRelationTags((prev) =>
+                      appendCustomRelationTag(prev, connectCustomRelationTag)
+                    )
+                    setConnectCustomRelationTag('')
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+              <label className="mt-3 block text-sm font-medium">Constellation (optional)</label>
+              <select
+                value={connectCommunityId ?? ''}
+                onChange={(e) => setConnectCommunityId(normalizeCommunityId(e.target.value))}
+                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
+              >
+                <option value="">General / None</option>
+                {communities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <label className="mt-3 block text-sm font-medium">Connection note (optional)</label>
+              <input
+                value={connectNote}
+                onChange={(e) => setConnectNote(e.target.value)}
+                placeholder="Optional note"
+                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
+              />
             </div>
-            <label className="mt-3 block text-sm font-medium">Constellation (optional)</label>
-            <select
-              value={connectCommunityId ?? ''}
-              onChange={(e) => setConnectCommunityId(normalizeCommunityId(e.target.value))}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            >
-              <option value="">General / None</option>
-              {communities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <label className="mt-3 block text-sm font-medium">Connection note (optional)</label>
-            <input
-              value={connectNote}
-              onChange={(e) => setConnectNote(e.target.value)}
-              placeholder="Optional note"
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            />
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                className="flex-1 rounded-md bg-foreground py-2 text-sm text-background"
-                onClick={() => void addConnectionFromModal()}
-              >
-                Connect
-              </button>
-              <button
-                type="button"
-                className="rounded-md border px-4 py-2 text-sm dark:border-zinc-600"
-                onClick={() => setAddConnectionOpen(false)}
-              >
-                Cancel
-              </button>
+            <div className="shrink-0 border-t border-zinc-200 bg-background px-4 py-3 dark:border-zinc-700">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md bg-foreground py-2 text-sm text-background"
+                  onClick={() => void addConnectionFromModal()}
+                >
+                  Connect
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border px-4 py-2 text-sm dark:border-zinc-600"
+                  onClick={() => {
+                    setAddConnectionOpen(false)
+                    setConnectCustomRelationTag('')
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
       ) : null}
 
       {pendingConn ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-background p-6 dark:border-zinc-700">
-            <h3 className="font-semibold">New connection</h3>
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-              Create a bidirectional connection.
-            </p>
-            <label className="mt-3 block text-sm font-medium">Relationship types (optional)</label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {(RELATION_TYPES as unknown as string[]).map((tag) => {
-                const selected = pendingRelationTags.includes(tag)
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={relationTagPickerClass(selected)}
-                    onClick={() => {
-                      const next = selected
-                        ? pendingRelationTags.filter((t) => t !== tag)
-                        : [...pendingRelationTags, tag]
-                      setPendingRelationTags(normalizeRelationTags(next))
-                    }}
-                  >
-                    {tag}
-                  </button>
-                )
-              })}
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center sm:p-4"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setPendingConn(null)
+              setPendingCommunityId(null)
+              setPendingRelationTags([])
+              setPendingCustomRelationTag('')
+              setPendingLabelNote('')
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pending-connection-title"
+            className="flex max-h-[min(88dvh,28rem)] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-background shadow-xl dark:border-zinc-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+              <h3 id="pending-connection-title" className="font-semibold">
+                New connection
+              </h3>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                Create a bidirectional connection.
+              </p>
             </div>
-            <label className="mt-3 block text-sm font-medium">Constellation (optional)</label>
-            <select
-              value={pendingCommunityId ?? ''}
-              onChange={(e) =>
-                setPendingCommunityId(normalizeCommunityId(e.target.value || null))
-              }
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            >
-              <option value="">No constellation</option>
-              {communities.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <label className="mt-3 block text-sm font-medium">Note (optional)</label>
-            <input
-              value={pendingLabelNote}
-              onChange={(e) => setPendingLabelNote(e.target.value)}
-              placeholder="Optional note"
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            />
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                className="flex-1 rounded-md bg-foreground py-2 text-sm text-background"
-                onClick={() => void confirmPendingEdge()}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+              <label className="block text-sm font-medium">Relationship types (optional)</label>
+              <div className="mt-2 flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+                {(RELATION_TYPES as unknown as string[]).map((tag) => {
+                  const selected = pendingRelationTags.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      className={relationTagPickerClass(selected)}
+                      onClick={() => {
+                        const next = selected
+                          ? pendingRelationTags.filter((t) => t !== tag)
+                          : [...pendingRelationTags, tag]
+                        setPendingRelationTags(normalizeRelationTags(next))
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={pendingCustomRelationTag}
+                  onChange={(e) => setPendingCustomRelationTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return
+                    e.preventDefault()
+                    setPendingRelationTags((prev) =>
+                      appendCustomRelationTag(prev, pendingCustomRelationTag)
+                    )
+                    setPendingCustomRelationTag('')
+                  }}
+                  placeholder="Add custom tag"
+                  className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600"
+                />
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md border px-2.5 py-1.5 text-xs dark:border-zinc-600"
+                  onClick={() => {
+                    setPendingRelationTags((prev) =>
+                      appendCustomRelationTag(prev, pendingCustomRelationTag)
+                    )
+                    setPendingCustomRelationTag('')
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+              <label className="mt-3 block text-sm font-medium">Constellation (optional)</label>
+              <select
+                value={pendingCommunityId ?? ''}
+                onChange={(e) =>
+                  setPendingCommunityId(normalizeCommunityId(e.target.value || null))
+                }
+                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
               >
-                Create
-              </button>
-              <button
-                type="button"
-                className="rounded-md border px-4 py-2 text-sm dark:border-zinc-600"
-                onClick={() => {
-                  setPendingConn(null)
-                  setPendingCommunityId(null)
-                  setPendingRelationTags([])
-                  setPendingLabelNote('')
-                }}
-              >
-                Cancel
-              </button>
+                <option value="">No constellation</option>
+                {communities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <label className="mt-3 block text-sm font-medium">Note (optional)</label>
+              <input
+                value={pendingLabelNote}
+                onChange={(e) => setPendingLabelNote(e.target.value)}
+                placeholder="Optional note"
+                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
+              />
+            </div>
+            <div className="shrink-0 border-t border-zinc-200 bg-background px-4 py-3 dark:border-zinc-700">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md bg-foreground py-2 text-sm text-background"
+                  onClick={() => void confirmPendingEdge()}
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border px-4 py-2 text-sm dark:border-zinc-600"
+                  onClick={() => {
+                    setPendingConn(null)
+                    setPendingCommunityId(null)
+                    setPendingRelationTags([])
+                    setPendingCustomRelationTag('')
+                    setPendingLabelNote('')
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3893,13 +4199,53 @@ function FriendGraphInner({
               <label className="mb-1 block text-xs uppercase tracking-widest text-gray-400">
                 Location
               </label>
-              <input
-                value={panelLocName}
-                onChange={(e) => setPanelLocName(e.target.value)}
-                onBlur={() => void handlePanelLocationBlur()}
-                placeholder="e.g. Vancouver"
-                className="w-full border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
-              />
+              <div className="relative">
+                <input
+                  value={panelLocName}
+                  onFocus={() => setPanelLocMenuOpen(true)}
+                  onChange={(e) => {
+                    setPanelLocName(e.target.value)
+                    setPanelLocMenuOpen(true)
+                  }}
+                  onBlur={handlePanelLocationBlur}
+                  placeholder="e.g. Vancouver"
+                  className="w-full border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
+                  role="combobox"
+                  aria-expanded={panelLocMenuOpen}
+                  aria-controls="profile-location-suggestions"
+                  aria-autocomplete="list"
+                />
+                {panelLocMenuOpen ? (
+                  <div
+                    id="profile-location-suggestions"
+                    role="listbox"
+                    className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 max-h-44 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                  >
+                    {locationSuggestions.length > 0 ? (
+                      locationSuggestions.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          role="option"
+                          className="block w-full px-3 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            setPanelLocName(name)
+                            setPanelLocMenuOpen(false)
+                            void commitPanelLocation(name)
+                          }}
+                        >
+                          {name}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        No matches. Press Save or leave this field to create a new location.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </div>
             {!selectedPerson.is_self ? (
               <div>
@@ -3929,6 +4275,41 @@ function FriendGraphInner({
                       )
                     })}
                   </div>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={panelCustomRelationTag}
+                    onChange={(e) => setPanelCustomRelationTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return
+                      e.preventDefault()
+                      const normalized = appendCustomRelationTag(
+                        panelRelationTags,
+                        panelCustomRelationTag
+                      )
+                      setPanelRelationTags(normalized)
+                      setPanelCustomRelationTag('')
+                      void saveRelationTagsToUser(normalized)
+                    }}
+                    placeholder="Add custom tag"
+                    className="min-w-0 flex-1 border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
+                  />
+                  <button
+                    type="button"
+                    className="rounded-md border px-2.5 py-1.5 text-xs dark:border-zinc-600"
+                    onClick={() => {
+                      const normalized = appendCustomRelationTag(
+                        panelRelationTags,
+                        panelCustomRelationTag
+                      )
+                      setPanelRelationTags(normalized)
+                      setPanelCustomRelationTag('')
+                      void saveRelationTagsToUser(normalized)
+                    }}
+                  >
+                    Add
+                  </button>
                 </div>
                 {panelRelationTags.join(', ') !== loadedRelationTagsKey ? (
                   <div className="mt-2">
@@ -4031,15 +4412,26 @@ function FriendGraphInner({
                 <span className="text-xs uppercase tracking-widest text-gray-400">
                   Custom attributes
                 </span>
-                <button
-                  type="button"
-                  className="text-xs underline"
-                  onClick={() =>
-                    setPanelRows((r) => [...r, { key: '', value: '' }])
-                  }
-                >
-                  + Add field
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-xs underline"
+                    onClick={() =>
+                      setPanelRows((r) => [...r, { key: '', value: '' }])
+                    }
+                  >
+                    + Add field
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-blue-600 underline dark:text-blue-400"
+                    onClick={() =>
+                      setPanelRows((r) => [...r, { key: 'Birthday', value: '' }])
+                    }
+                  >
+                    + Birthday
+                  </button>
+                </div>
               </div>
               <div className="space-y-1">
                 {(customAttrsShowAll
@@ -4050,6 +4442,8 @@ function FriendGraphInner({
                     <input
                       className="w-[36%] border-b border-gray-300 bg-transparent px-1 py-1 text-sm outline-none focus:border-blue-400"
                       value={row.key}
+                      list="custom-attribute-key-suggestions"
+                      placeholder="Field (e.g. Birthday)"
                       onChange={(e) =>
                         setPanelRows((rows) =>
                           rows.map((x, j) =>
@@ -4090,6 +4484,11 @@ function FriendGraphInner({
                   </div>
                 ))}
               </div>
+              <datalist id="custom-attribute-key-suggestions">
+                {CUSTOM_ATTRIBUTE_SUGGESTED_KEYS.map((key) => (
+                  <option key={key} value={key} />
+                ))}
+              </datalist>
               {panelRows.length > 3 && !customAttrsShowAll ? (
                 <button
                   type="button"

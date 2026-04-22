@@ -1,3 +1,4 @@
+import { DashboardHelpBridgeProvider } from '@/components/dashboard-help-bridge'
 import { Navbar } from '@/components/navbar'
 import { SupabaseProvider } from '@/components/supabase-provider'
 import { ToastProvider } from '@/components/toast-provider'
@@ -57,10 +58,12 @@ export default function RootLayout({
         className={`${inter.className} flex min-h-dvh flex-col bg-background text-foreground`}
       >
         <SupabaseProvider>
-          <ToastProvider>
-            <Navbar />
-            <main className="flex min-h-0 flex-1 flex-col">{children}</main>
-          </ToastProvider>
+          <DashboardHelpBridgeProvider>
+            <ToastProvider>
+              <Navbar />
+              <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+            </ToastProvider>
+          </DashboardHelpBridgeProvider>
         </SupabaseProvider>
         <Analytics />
       </body>

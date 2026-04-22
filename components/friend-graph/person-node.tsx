@@ -22,6 +22,8 @@ export type PersonNodeData = {
   multiSelected?: boolean
   /** Node is the one open in the side panel (RF selection may be off). */
   selectedInPanel?: boolean
+  /** Distinct highlight when this node's profile side panel is open. */
+  panelFocused?: boolean
   /** Recently added via Import with AI — temporary glow on the graph. */
   aiImportGlow?: boolean
 }
@@ -54,6 +56,7 @@ export function PersonNode({
   const constellationMode = data.constellationMode === true
   const multiSelected = data.multiSelected === true
   const selectedInPanel = data.selectedInPanel === true
+  const panelFocused = data.panelFocused === true
   const highlighted = selected || selectedInPanel
   const labelLines = isSelf ? ['You'] : splitNameLabel(data.name)
 
@@ -84,6 +87,17 @@ export function PersonNode({
       }}
       title={data.name}
     >
+      {panelFocused ? (
+        <div
+          className={[
+            'pointer-events-none absolute rounded-full border-2 border-cyan-300/95',
+            'shadow-[0_0_22px_8px_rgba(34,211,238,0.45),0_0_0_3px_rgba(103,232,249,0.45)]',
+            'animate-pulse',
+            isSelf ? 'inset-[-12px]' : 'inset-[-9px]',
+          ].join(' ')}
+          aria-hidden
+        />
+      ) : null}
       {data.aiImportGlow ? (
         <div
           className={[

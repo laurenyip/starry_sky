@@ -4,12 +4,16 @@ import { LogoMark } from '@/components/LogoMark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { useSupabaseContext } from '@/components/supabase-provider'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useDashboardHelpBridge } from '@/components/dashboard-help-bridge'
 import { useEffect, useState } from 'react'
 
 export function Navbar() {
   const { supabase, session } = useSupabaseContext()
   const router = useRouter()
+  const pathname = usePathname()
+  const dashboardHelp = useDashboardHelpBridge()
+  const showDashboardHelp = Boolean(session) && pathname === '/dashboard'
   const [username, setUsername] = useState<string | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [logoutError, setLogoutError] = useState<string | null>(null)
@@ -91,6 +95,22 @@ export function Navbar() {
                 >
                   Log out
                 </button>
+                {showDashboardHelp ? (
+                  <button
+                    type="button"
+                    onClick={() => dashboardHelp?.requestOpenHelp()}
+                    className="shrink-0 rounded-full p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                    title="Help & Tutorial"
+                    aria-label="Help and tutorial"
+                  >
+                    <span
+                      className="flex h-5 w-5 items-center justify-center rounded-full border border-current text-xs font-bold leading-none"
+                      aria-hidden
+                    >
+                      ?
+                    </span>
+                  </button>
+                ) : null}
               </>
             ) : (
               <>

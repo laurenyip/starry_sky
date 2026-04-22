@@ -29,6 +29,7 @@ const ROW_1: [string, string][] = [
   ['Alex Rivera', '#8277C6'],
   ['Yoona Charland', '#F6C2C4'],
   ['Sophie Kim', '#FC9874'],
+  ['Abigail Kim', '#8277C6'],
   ['Brian Rahadi', '#8BC5DD'],
   ['Marcus Webb', '#7154A6'],
   ['Hemant Dhokia', '#FA899D'],
