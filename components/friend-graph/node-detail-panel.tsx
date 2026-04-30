@@ -35,6 +35,7 @@ export function NodeDetailPanel(props: {
   saveLabel?: string
   canDelete: boolean
   onDelete: () => void
+  topOffsetClass?: string
 }) {
   const {
     open,
@@ -59,13 +60,14 @@ export function NodeDetailPanel(props: {
     saveLabel,
     canDelete,
     onDelete,
+    topOffsetClass,
   } = props
 
   if (!open || !node) return null
 
   return (
     <aside
-      className="fixed top-16 right-0 bottom-0 z-20 flex w-72 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+      className={`fixed right-0 bottom-0 z-20 flex w-72 flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${topOffsetClass ?? 'top-16'}`}
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-3 text-sm [&_input]:text-base [&_select]:text-base [&_textarea]:text-base">
         <div className="flex justify-end">

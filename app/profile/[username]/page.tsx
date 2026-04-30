@@ -1,329 +1,298 @@
-import { createClient, type PostgrestError } from '@supabase/supabase-js'
-import type { Metadata } from 'next'
+'use client'
+
+import { useToast } from '@/components/toast-provider'
+import { createClient } from '@/lib/supabase'
 import Image from 'next/image'
-import { notFound } from 'next/navigation'
-import type { DbEdge, DbLocation, DbPerson } from '@/lib/flow-build'
-import { createServiceRoleClient } from '@/lib/supabase/service-role'
-import { PublicProfileGraph, type PublicGraphPayload } from './public-graph'
+import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-type PageProps = { params: Promise<{ username: string }> }
-
-async function getProfileUsernameOnly(
+type ProfileRow = {
+  id: string
   username: string
-): Promise<string | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !anonKey) return null
-
-  const anon = createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-
-  const { data, error } = await anon
-    .from('profiles')
-    .select('username')
-    .eq('username', username)
-    .maybeSingle()
-
-  if (error || !data) return null
-  return data.username as string
+  avatar_url: string | null
 }
 
-export async function generateMetadata({
-  params,
-}: PageProps): Promise<Metadata> {
-  const { username: raw } = await params
-  const username = decodeURIComponent(raw)
-  const display = await getProfileUsernameOnly(username)
+export default function ProfilePage() {
+  const supabase = useMemo(() => createClient(), [])
+  const params = useParams<{ username: string }>()
+  const router = useRouter()
+  const { showToast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  if (!display) {
-    return {
-      title: 'Profile not found',
-      description: 'This FriendGraph profile does not exist.',
+  const [loading, setLoading] = useState(true)
+  const [notFoundState, setNotFoundState] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const [userId, setUserId] = useState<string | null>(null)
+  const [username, setUsername] = useState('')
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+
+  const [editOpen, setEditOpen] = useState(false)
+  const [editUsername, setEditUsername] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      setLoading(true)
+      setErrorMessage(null)
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const authUser = session?.user
+      if (!authUser) {
+        if (!active) return
+        setNotFoundState(true)
+        setLoading(false)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id,username,avatar_url')
+        .eq('id', authUser.id)
+        .maybeSingle()
+
+      if (!active) return
+      if (error || !data) {
+        setErrorMessage(error?.message ?? 'Profile not found')
+        setNotFoundState(true)
+        setLoading(false)
+        return
+      }
+
+      const profile = data as ProfileRow
+      const routeUsername = decodeURIComponent(params.username)
+      if (profile.username !== routeUsername) {
+        setNotFoundState(true)
+        setLoading(false)
+        return
+      }
+
+      setUserId(profile.id)
+      setUsername(profile.username)
+      setEditUsername(profile.username)
+      setAvatarUrl(profile.avatar_url)
+      setNotFoundState(false)
+      setLoading(false)
+    }
+
+    void load()
+    return () => {
+      active = false
+    }
+  }, [params.username, supabase])
+
+  const onAvatarPicked = async (file: File) => {
+    if (!userId) return
+    setErrorMessage(null)
+
+    const path = `profile/${userId}`
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' })
+    if (uploadError) {
+      setErrorMessage(uploadError.message)
+      return
+    }
+
+    const { data: publicData } = supabase.storage.from('avatars').getPublicUrl(path)
+    const publicUrl = `${publicData.publicUrl}?t=${Date.now()}`
+    const { error: saveError } = await supabase
+      .from('profiles')
+      .upsert({ id: userId, avatar_url: publicUrl }, { onConflict: 'id' })
+    if (saveError) {
+      setErrorMessage(saveError.message)
+      return
+    }
+
+    setAvatarUrl(publicUrl)
+    showToast('Profile photo updated.', 'success')
+  }
+
+  const onCancel = () => {
+    setEditUsername(username)
+    setNewPassword('')
+    setConfirmPassword('')
+    setErrorMessage(null)
+    setEditOpen(false)
+  }
+
+  const onSave = async () => {
+    if (!userId) return
+    setSaving(true)
+    setErrorMessage(null)
+
+    try {
+      const trimmedUsername = editUsername.trim()
+      if (!trimmedUsername) {
+        setErrorMessage('Username is required.')
+        return
+      }
+
+      if (newPassword || confirmPassword) {
+        if (newPassword !== confirmPassword) {
+          setErrorMessage('Passwords do not match.')
+          return
+        }
+      }
+
+      const { error: usernameError } = await supabase
+        .from('profiles')
+        .upsert(
+          { id: userId, username: trimmedUsername, avatar_url: avatarUrl },
+          { onConflict: 'id' }
+        )
+      if (usernameError) {
+        setErrorMessage(usernameError.message)
+        return
+      }
+
+      if (newPassword) {
+        const { error: passwordError } = await supabase.auth.updateUser({
+          password: newPassword,
+        })
+        if (passwordError) {
+          setErrorMessage(passwordError.message)
+          return
+        }
+      }
+
+      setUsername(trimmedUsername)
+      setEditUsername(trimmedUsername)
+      setNewPassword('')
+      setConfirmPassword('')
+      setEditOpen(false)
+      showToast('Profile saved.', 'success')
+      router.replace(`/profile/${encodeURIComponent(trimmedUsername)}`)
+    } finally {
+      setSaving(false)
     }
   }
 
-  return {
-    title: `${display}'s Friend Graph`,
-    description: `View ${display}'s relationship graph on FriendGraph.`,
-    openGraph: {
-      title: `${display}'s Friend Graph`,
-      description: `View ${display}'s relationship graph on FriendGraph.`,
-      type: 'profile',
-    },
-  }
-}
-
-type LoadOk = {
-  ok: true
-  username: string
-  profileAvatarUrl: string | null
-  /** When false, graph is hidden; graphData is null. */
-  isPublic: boolean
-  /** Nodes excluding the self / “You” node. */
-  connectionCount: number
-  graphData: PublicGraphPayload | null
-  usedServiceRole: boolean
-  fetchError: PostgrestError | null
-}
-
-type LoadFail =
-  | { ok: false; kind: 'not_found' }
-  | { ok: false; kind: 'error'; message: string }
-
-async function loadProfileAndGraph(
-  username: string
-): Promise<LoadOk | LoadFail> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !anonKey) {
-    return {
-      ok: false,
-      kind: 'error',
-      message:
-        'Supabase URL or anon key is missing. Check your environment configuration.',
-    }
-  }
-
-  const anon = createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-
-  const { data: profile, error: profileError } = await anon
-    .from('profiles')
-    .select('id, username, avatar_url, is_public')
-    .eq('username', username)
-    .maybeSingle()
-
-  if (profileError) {
-    return { ok: false, kind: 'error', message: profileError.message }
-  }
-  if (!profile) {
-    return { ok: false, kind: 'not_found' }
-  }
-
-  const rawAv = (profile as { avatar_url?: unknown }).avatar_url
-  const profileAvatarUrl =
-    rawAv == null || rawAv === '' ? null : String(rawAv)
-
-  const isPublic = (profile as { is_public?: boolean | null }).is_public !== false
-
-  if (!isPublic) {
-    return {
-      ok: true,
-      username: profile.username as string,
-      profileAvatarUrl,
-      isPublic: false,
-      connectionCount: 0,
-      graphData: null,
-      usedServiceRole: false,
-      fetchError: null,
-    }
-  }
-
-  const service = createServiceRoleClient()
-  const db = service ?? anon
-
-  const [locsRes, nodesRes, edgesRes, commRes] = await Promise.all([
-    db
-      .from('locations')
-      .select('id,name,user_id')
-      .eq('user_id', profile.id)
-      .order('name'),
-    db
-      .from('nodes')
-      .select(
-        'id,name,owner_id,location_id,relationship,things_to_remember,custom_attributes,position_x,position_y,pos_x,pos_y,avatar_url,is_self'
-      )
-      .eq('owner_id', profile.id),
-    db
-      .from('edges')
-      .select(
-        'id,owner_id,source_node_id,target_node_id,label,community_id,relation_type,relation_types,created_at'
-      )
-      .eq('owner_id', profile.id),
-    db
-      .from('communities')
-      .select('id,color')
-      .eq('owner_id', profile.id),
-  ])
-
-  const fetchErr =
-    locsRes.error ??
-    nodesRes.error ??
-    edgesRes.error ??
-    commRes.error ??
-    null
-
-  const locations = (locsRes.data ?? []) as DbLocation[]
-  const rawPeople = (nodesRes.data ?? []) as Record<string, unknown>[]
-  const people: DbPerson[] = rawPeople.map((r) => ({
-    id: String(r.id),
-    name: String(r.name),
-    location_id: (r.location_id as string | null) ?? null,
-    relationship: String(r.relationship ?? 'friend'),
-    things_to_remember: String(r.things_to_remember ?? ''),
-    custom_attributes:
-      (r.custom_attributes as Record<string, unknown> | null) ?? {},
-    position_x:
-      r.position_x == null ? null : Number(r.position_x as number),
-    position_y:
-      r.position_y == null ? null : Number(r.position_y as number),
-    pos_x: r.pos_x == null ? null : Number(r.pos_x as number),
-    pos_y: r.pos_y == null ? null : Number(r.pos_y as number),
-    avatar_url:
-      r.avatar_url == null || r.avatar_url === ''
-        ? null
-        : String(r.avatar_url),
-    is_self: Boolean(r.is_self),
-  }))
-
-  const edges: DbEdge[] = (edgesRes.data ?? []).map((e) => {
-    const row = e as Record<string, unknown>
-    const cid = row.community_id
-    const rt = row.relation_type
-    const rts = (row as any).relation_types
-    return {
-      id: e.id as string,
-      source_node_id: e.source_node_id as string,
-      target_node_id: e.target_node_id as string,
-      label: String(e.label ?? 'friend'),
-      community_id:
-        cid == null || cid === '' ? null : String(cid),
-      relation_type:
-        rt == null || rt === ''
-          ? null
-          : String(rt).trim().toLowerCase(),
-      relation_types: Array.isArray(rts)
-        ? (rts as unknown[]).map((x) => String(x)).filter(Boolean)
-        : null,
-      created_at:
-        row.created_at == null || row.created_at === ''
-          ? null
-          : String(row.created_at),
-    }
-  })
-
-  const communityColors: Record<string, string> = {}
-  for (const row of commRes.data ?? []) {
-    const r = row as { id: string; color: string }
-    if (r?.id && r?.color) communityColors[r.id] = r.color
-  }
-
-  const graphData: PublicGraphPayload = {
-    locations,
-    people,
-    edges,
-    communityColors,
-  }
-
-  const connectionCount = people.filter((p) => !p.is_self).length
-
-  return {
-    ok: true,
-    username: profile.username as string,
-    profileAvatarUrl,
-    isPublic: true,
-    connectionCount,
-    graphData,
-    usedServiceRole: Boolean(service),
-    fetchError: fetchErr,
-  }
-}
-
-export default async function PublicProfilePage({ params }: PageProps) {
-  const { username: raw } = await params
-  const username = decodeURIComponent(raw)
-
-  const result = await loadProfileAndGraph(username)
-
-  if (!result.ok) {
-    if (result.kind === 'not_found') {
-      notFound()
-    }
+  if (loading) {
     return (
-      <div className="mx-auto flex max-w-lg flex-1 flex-col justify-center px-4 py-16">
-        <h1 className="text-lg font-semibold text-foreground">
-          Something went wrong
-        </h1>
-        <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
-          {result.message}
-        </p>
+      <div className="flex flex-1 items-center justify-center px-4">
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</p>
       </div>
     )
   }
 
-  const {
-    username: displayUsername,
-    profileAvatarUrl,
-    isPublic,
-    connectionCount,
-    graphData,
-    usedServiceRole,
-    fetchError,
-  } = result
-
-  const headerInitial = displayUsername.slice(0, 1).toUpperCase()
-
-  if (!isPublic) {
+  if (notFoundState) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center px-4 py-20">
-        <p className="text-center text-lg font-medium text-foreground">
-          This graph is private.
-        </p>
+      <div className="flex flex-1 items-center justify-center px-4">
+        <p className="text-base font-medium text-foreground">Profile not found</p>
       </div>
     )
   }
+
+  const initial = username.slice(0, 1).toUpperCase()
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-zinc-200 bg-background/90 px-4 py-6 dark:border-zinc-800 sm:px-6">
-        <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
-          <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-zinc-200 bg-zinc-200/80 dark:border-zinc-600 dark:bg-zinc-700">
-            {profileAvatarUrl ? (
-              <Image
-                src={profileAvatarUrl}
-                alt=""
-                width={80}
-                height={80}
-                className="h-full w-full object-cover"
-                unoptimized
-              />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-zinc-600 dark:text-zinc-300">
-                {headerInitial}
-              </span>
-            )}
-          </div>
-          <h1 className="mt-4 text-xl font-semibold tracking-tight text-foreground">
-            {displayUsername}
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {connectionCount}{' '}
-            {connectionCount === 1 ? 'connection' : 'connections'}
-          </p>
-          {fetchError && !usedServiceRole ? (
-            <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
-              Graph data could not be loaded. Set{' '}
-              <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                SUPABASE_SERVICE_ROLE_KEY
-              </code>{' '}
-              in{' '}
-              <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
-                .env.local
-              </code>{' '}
-              (server-only; never use it in client code).
-            </p>
-          ) : fetchError ? (
-            <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
-              {fetchError.message}
-            </p>
-          ) : null}
-        </div>
-      </div>
+    <div className="flex flex-1 items-center justify-center px-4 py-8">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="mx-auto block h-28 w-28 overflow-hidden rounded-full border border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"
+          aria-label="Upload profile photo"
+        >
+          {avatarUrl ? (
+            <Image
+              src={avatarUrl}
+              alt=""
+              width={112}
+              height={112}
+              className="h-full w-full object-cover"
+              unoptimized
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-3xl font-semibold text-zinc-500 dark:text-zinc-300">
+              {initial}
+            </span>
+          )}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (file) void onAvatarPicked(file)
+          }}
+        />
 
-      <div className="flex min-h-0 min-h-[50vh] flex-1 flex-col px-2 pb-4 pt-2 sm:px-4">
-        {graphData ? <PublicProfileGraph graphData={graphData} /> : null}
+        <p className="mt-4 text-xl font-semibold text-foreground">{username}</p>
+
+        <button
+          type="button"
+          onClick={() => setEditOpen((prev) => !prev)}
+          className="mt-4 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-foreground hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          Edit
+        </button>
+
+        {editOpen ? (
+          <div className="mt-5 space-y-3 text-left">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Change username
+              </label>
+              <input
+                value={editUsername}
+                onChange={(e) => setEditUsername(e.target.value)}
+                className="w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Change password
+              </label>
+              <input
+                type="password"
+                placeholder="New password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="mb-2 w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+              />
+              <input
+                type="password"
+                placeholder="Confirm password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void onSave()}
+                disabled={saving}
+                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {errorMessage ? (
+          <p className="mt-3 text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+        ) : null}
       </div>
     </div>
   )

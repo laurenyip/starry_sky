@@ -126,7 +126,15 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-5rem)] min-h-[28rem] w-full min-w-0 flex-col">
+    <div className="relative flex h-[calc(100dvh-5rem)] min-h-[28rem] w-full min-w-0 flex-col">
+      <div className="pointer-events-auto absolute right-44 top-3 z-40">
+        <Link
+          href="/shared"
+          className="rounded-md border border-zinc-300 bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          Shared Graphs
+        </Link>
+      </div>
       <FriendGraphWorkspace supabase={supabase} userId={userId} />
     </div>
   )

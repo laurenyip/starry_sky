@@ -10,6 +10,7 @@ import { ConstellationOverlay } from '@/components/friend-graph/constellation-ov
 import { LabeledEdge } from '@/components/friend-graph/labeled-edge'
 import { NodeDetailPanel } from '@/components/friend-graph/node-detail-panel'
 import { NodePhotoGallery } from '@/components/friend-graph/node-photo-gallery'
+import { GraphSearchBar } from '@/components/graph/graph-search-bar'
 import {
   NodesListView,
   type ListSortMode,
@@ -385,6 +386,7 @@ function FriendGraphInner({
   const [hoverCommunityId, setHoverCommunityId] = useState<string | null>(null)
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null)
   const [view, setView] = useState<'graph' | 'list'>('graph')
+  const [searchQuery, setSearchQuery] = useState('')
   const [listSearch, setListSearch] = useState('')
   const [listSort, setListSort] = useState<ListSortMode>('az')
 
@@ -800,6 +802,15 @@ function FriendGraphInner({
     activeConstellationId && activeConstellationId !== NO_COMMUNITY_KEY
   )
   const locationMode = Boolean(selectedLocationId)
+  const matchedBySearch = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return null
+    return new Set(
+      people
+        .filter((p) => p.name.toLowerCase().includes(q))
+        .map((p) => p.id)
+    )
+  }, [people, searchQuery])
 
   const constellationMemberIds = useMemo(
     () => (memberSetForConstellation ? [...memberSetForConstellation] : []),
@@ -842,21 +853,22 @@ function FriendGraphInner({
 
   const nodesForFlow = useMemo(() => {
     const activeSet = locationMode ? memberSetForLocation : memberSetForConstellation
-    if (!activeSet) return initialNodes
     const glowHex = locationMode ? '#fbbf24' : activeConstellationHex
     return initialNodes.map((n) => {
       if (n.type !== 'person') return n
-      const inSet = activeSet.has(n.id)
+      const inSet = activeSet ? activeSet.has(n.id) : true
+      const inSearch = matchedBySearch ? matchedBySearch.has(n.id) : true
       const baseData = (n.data ?? {}) as Record<string, unknown>
       const memberCommunityIds = nodeCommunityMap.get(n.id) ?? []
       const memberDots = memberCommunityIds
         .map((cid) => communityColorMap.get(cid))
         .filter((hex): hex is string => typeof hex === 'string' && hex.length > 0)
+      const modeOpacity = activeSet ? (inSet ? 1 : locationMode || constellationMode ? 0.1 : 0.15) : 1
       return {
         ...n,
         style: {
           ...n.style,
-          opacity: inSet ? 1 : locationMode || constellationMode ? 0.1 : 0.15,
+          opacity: inSearch ? modeOpacity : 0.12,
           transition: 'opacity 0.28s ease',
         },
         data: {
@@ -874,6 +886,7 @@ function FriendGraphInner({
     memberSetForConstellation,
     activeConstellationHex,
     constellationMode,
+    matchedBySearch,
     nodeCommunityMap,
     communityColorMap,
   ])
@@ -2381,17 +2394,12 @@ function FriendGraphInner({
 
   const createDraftPersonAndOpenPanel = useCallback(async () => {
     setSubmitErr(null)
-    const locId = locations[0]?.id ?? null
-    if (!locId) {
-      setSubmitErr('Add a location first, then try again.')
-      return
-    }
     setCreatingDraftNode(true)
     const draftId = `__draft__-${Date.now()}`
     setSelectedPerson({
       id: draftId,
       name: 'New person',
-      location_id: locId,
+      location_id: null,
       relationship: 'friend',
       things_to_remember: '',
       custom_attributes: {},
@@ -2403,7 +2411,7 @@ function FriendGraphInner({
       is_self: false,
       created_at: null,
     })
-  }, [locations])
+  }, [])
 
   const savePanelExplicit = useCallback(async () => {
     if (!selectedPerson) return
@@ -2718,7 +2726,7 @@ function FriendGraphInner({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
+    <div className="relative z-0 flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {error ? (
         <div
           className="m-3 shrink-0 whitespace-pre-wrap rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
@@ -2727,8 +2735,13 @@ function FriendGraphInner({
           {error}
         </div>
       ) : null}
-      <div className="flex shrink-0 items-center justify-end gap-3 border-b border-zinc-200 bg-background px-3 py-2 dark:border-zinc-800">
-        <div className="flex shrink-0 items-center gap-1.5">
+      <div className="relative z-30 flex shrink-0 items-center justify-end gap-3 border-b border-zinc-200 bg-background px-3 py-2 shadow-sm dark:border-zinc-800">
+        <GraphSearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          className="absolute left-1/2 w-full max-w-md -translate-x-1/2"
+        />
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={() => setView('graph')}
@@ -2754,7 +2767,7 @@ function FriendGraphInner({
         </div>
       </div>
       <div
-        className={`relative min-h-0 w-full flex-1 flex flex-col ${
+        className={`relative z-0 min-h-0 w-full flex-1 flex flex-col ${
           view === 'graph' && constellationMode ? 'bg-zinc-950' : ''
         }`}
       >
@@ -4170,6 +4183,7 @@ function FriendGraphInner({
       <NodeDetailPanel
         open={Boolean(selectedPerson)}
         node={selectedPerson}
+        topOffsetClass="top-28"
         onClose={() => {
           setSelectedCommunityId(null)
           setGraphHighlight({ kind: 'none' })

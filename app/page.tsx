@@ -1,32 +1,9 @@
-import { createServerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
 import { FigmaDesktop47_40 } from '@/components/landing/figma-desktop-47-40'
 import { LandingAuroraBackground } from '@/components/landing/landing-aurora-background'
 import { LandingFeatureCards } from '@/components/landing/landing-feature-cards'
 import { SocialProof } from '@/components/SocialProof'
 
 export default async function Home() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
-
-  if (supabaseUrl && supabaseAnonKey) {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-      },
-    })
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (session) redirect('/dashboard')
-  }
-
   return (
     <div className="relative isolate z-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden max-w-[100vw]">
 

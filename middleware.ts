@@ -31,11 +31,6 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // If the user is already logged in, skip the landing page.
-  if (pathname === '/' && session) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
   // Keep all existing dashboard protection rules unchanged.
   if (pathname.startsWith('/dashboard') && !session) {
     return NextResponse.redirect(new URL('/login', request.url))
@@ -45,5 +40,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/dashboard/:path*'],
+  matcher: ['/dashboard/:path*'],
 }
