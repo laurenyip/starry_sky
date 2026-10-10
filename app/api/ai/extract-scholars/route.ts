@@ -44,8 +44,9 @@ Each array item must be an object with these keys:
 Include all keys for every item. Unknown values should be null.
 Do not include extra keys.`
 
+    const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite'
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,10 +58,17 @@ Do not include extra keys.`
       }
     )
 
-    const payload = (await geminiRes.json()) as {
+    const payload = (await geminiRes.json().catch(() => null)) as {
       candidates?: Array<{
         content?: { parts?: Array<{ text?: string }> }
       }>
+      error?: { message?: string }
+    } | null
+
+    if (!geminiRes.ok) {
+      const detail = payload?.error?.message ?? `HTTP ${geminiRes.status}`
+      console.error('[extract-scholars] Gemini error', geminiRes.status, detail)
+      return NextResponse.json({ error: `Gemini error: ${detail}` }, { status: 502 })
     }
 
     const rawText =
